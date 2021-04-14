@@ -37,20 +37,17 @@
 
 			void main() 
 			{	
-				vec4 water = (smoothstep(0.01, 0.35, vAmount)- smoothstep(0.35, 0.44, vAmount)) * texture2D( oceanTexture, vUV * 100.0 );
-				vec4 sandy = vec4(0.0, 0.0, 0.0, 0.0); //(smoothstep(0.34, 0.45, vAmount)- smoothstep(0.44, 0.61, vAmount)) * texture2D( sandyTexture, vUV * 100.0 );
-				vec4 grass = vec4(0.0, 0.0, 0.0, 0.0); //(smoothstep(0.44, 0.61, vAmount)- smoothstep(0.60, 0.75, vAmount)) * texture2D( grassTexture, vUV * 500.0 );
-				vec4 grass2 = vec4(0.0, 0.0, 0.0, 0.0); //(smoothstep(0.60, 0.75, vAmount)- smoothstep(0.75, 0.84, vAmount)) * texture2D( grass2Texture, vUV * 1000.0 );
-				vec4 rocky = vec4(0.0, 0.0, 0.0, 0.0); //(smoothstep(0.74, 0.85, vAmount)- smoothstep(0.85, 0.94, vAmount)) * texture2D( rockyTexture, vUV * 100.0 );
-				vec4 snowy = vec4(0.0, 0.0, 0.0, 0.0); //(smoothstep(0.84, 0.99, vAmount)) * texture2D( snowyTexture, vUV * 10.0 );
+								
+				vec4 snow  = smoothstep(0.90, 0.99, vAmount) * vec4(1.0, 1.0, 1.0, 0.0); 
+				vec4 rock = ( smoothstep(0.80, 0.95, vAmount) - smoothstep(0.90, 0.96, vAmount) ) * vec4(0.7, 0.5, 0.0, 0.0); 
+				vec4 plateu  =  (smoothstep(0.70, 0.90, vAmount)-smoothstep(0.80, 0.90, vAmount)) * vec4(0.4, 0.8, 0.4, 0.0); 
+				vec4 forest  =  (smoothstep(0.60, 0.80, vAmount)-smoothstep(0.70, 0.80, vAmount)) * vec4(0.1, 0.90, 0.1, 0.0); 
+				vec4 farms  =  (smoothstep(0.50, 0.70, vAmount)-smoothstep(0.60, 0.70, vAmount)) * vec4(0.6, 0.9, 0.0, 0.0); 
+				vec4 sand = (smoothstep(0.40, 0.60, vAmount)- smoothstep(0.50, 0.60, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
 				
-				vec4 colorw  = vec4(0.0, 0.0, 0.0, 0.0) + smoothstep(0.95, 0.99, vAmount) * vec4(1.0, 1.0, 1.0, 0.0); 
-				vec4 colorbr  = vec4(0.0, 0.0, 0.0, 0.0) + (smoothstep(0.75, 0.95, vAmount)-smoothstep(0.945, 0.95, vAmount)) * vec4(0.90, 0.6, 0.0, 0.0); 
-				vec4 colorg  = vec4(0.0, 0.0, 0.0, 0.0) + (smoothstep(0.40, 0.75, vAmount)-smoothstep(0.75, 0.77, vAmount)) * vec4(0.0, 1.0, 0.0, 0.0); 
 				vec4 colorb  = vec4(0.0, 0.0, 0.0, 0.0) + smoothstep(0.60, 0.95, 1.0-vAmount) * vec4(0.0, 0.0, 1.0, 0.0);
-				vec4 colorby = vec4(0.0, 0.0, 0.0, 0.0) + ( smoothstep(0.45, 0.55, vAmount)- smoothstep(0.50, 0.56, vAmount) ) * vec4(0.7, 0.7, 0.0, 0.0);
 				
-				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + water + sandy + grass + grass2 + rocky + snowy + colorw + colorbr + colorg + colorb + colorby; //, 1.0);,
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + sand + farms + forest + plateu + snow + rock;
 			}
 
 		</script>
@@ -108,7 +105,7 @@
 				document.body.appendChild( renderer.domElement );
 
 				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 20, 200000 );
-				camera.position.set( 400, 200, 0 );
+				camera.position.set( 400, 200, 10000 );
 				
 				// Water
 				//const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
