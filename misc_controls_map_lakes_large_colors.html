@@ -43,11 +43,12 @@
 				vec4 plateu  =  (smoothstep(0.70, 0.90, vAmount)-smoothstep(0.80, 0.90, vAmount)) * vec4(0.4, 0.8, 0.4, 0.0); 
 				vec4 forest  =  (smoothstep(0.60, 0.80, vAmount)-smoothstep(0.70, 0.80, vAmount)) * vec4(0.1, 0.90, 0.1, 0.0); 
 				vec4 farms  =  (smoothstep(0.50, 0.70, vAmount)-smoothstep(0.60, 0.70, vAmount)) * vec4(0.6, 0.9, 0.0, 0.0); 
-				vec4 sand = (smoothstep(0.40, 0.60, vAmount)- smoothstep(0.50, 0.60, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
+				vec4 sand = (smoothstep(0.40, 0.60, vAmount)- smoothstep(0.50, 0.60, vAmount) ) * vec4(0.3, 0.8, 0.0, 0.0);
+				vec4 sandy = (smoothstep(0.30, 0.50, vAmount)- smoothstep(0.40, 0.50, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
 				
 				vec4 colorb  = vec4(0.0, 0.0, 0.0, 0.0) + smoothstep(0.60, 0.95, 1.0-vAmount) * vec4(0.0, 0.0, 1.0, 0.0);
 				
-				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + sand + farms + forest + plateu + snow + rock;
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + sandy + sand + farms + forest + plateu + snow + rock;
 			}
 
 		</script>
@@ -136,7 +137,7 @@
 				sun = new THREE.Vector3();
 				
 				const sky = new Sky();
-				sky.scale.setScalar( 100000 );
+				sky.scale.setScalar( 300000 );
 				scene.add( sky );
 				
 				const skyUniforms = sky.material.uniforms;
@@ -194,7 +195,7 @@
 				controls.screenSpacePanning = false;
 
 				controls.minDistance = 50;
-				controls.maxDistance = 15000;
+				controls.maxDistance = 30000;
 
 				controls.maxPolarAngle = Math.PI / 2;
 
