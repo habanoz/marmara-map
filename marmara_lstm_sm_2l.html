@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - map controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #ccc;
+				color: #000;
+			}
+
+			a {
+				color: #f00;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - map controls
+		</div>
+		
+		<script id="fragmentShader" type="x-shader/x-fragment">
+
+			uniform sampler2D oceanTexture;
+			uniform sampler2D sandyTexture;
+			uniform sampler2D grass1Texture;
+			uniform sampler2D grass2Texture;
+			uniform sampler2D grass3Texture;
+			uniform sampler2D grass4Texture;
+			uniform sampler2D grass5Texture;
+			uniform sampler2D dirtTexture;
+			uniform sampler2D rockyTexture;
+			uniform sampler2D snowyTexture;
+
+			varying vec2 vUV;
+
+			varying float vAmount;
+
+			void main() 
+			{	
+				vec4 water = (smoothstep(0.01, 0.30, vAmount)- smoothstep(0.30, 0.40, vAmount)) * texture2D( oceanTexture, vUV * 10.0 );
+				vec4 water2 = (smoothstep(0.30, 0.40, vAmount)- smoothstep(0.40, 0.45, vAmount)) * texture2D( dirtTexture, vUV * 50.0 );
+				vec4 sandy = (smoothstep(0.40, 0.45, vAmount)- smoothstep(0.43, 0.47, vAmount)) * texture2D( sandyTexture, vUV * 50.0 );
+				vec4 grass5 = (smoothstep(0.45, 0.54, vAmount)- smoothstep(0.54, 0.60, vAmount)) * texture2D( grass5Texture, vUV * 100.0 );
+				vec4 grass1 = (smoothstep(0.54, 0.60, vAmount)- smoothstep(0.60, 0.67, vAmount)) * texture2D( grass1Texture, vUV * 50.0 );
+				vec4 grass2 = (smoothstep(0.60, 0.67, vAmount)- smoothstep(0.67, 0.81, vAmount)) * texture2D( grass2Texture, vUV * 100.0 );
+				vec4 grass3 = vec4(0.0, 0.0, 0.0, 0.0);//(smoothstep(0.67, 0.74, vAmount)- smoothstep(0.74, 0.81, vAmount)) * texture2D( grass3Texture, vUV * 100.0 );
+				vec4 grass4 = (smoothstep(0.67, 0.81, vAmount)- smoothstep(0.81, 0.95, vAmount)) * texture2D( grass4Texture, vUV * 200.0 );
+				vec4 dirt = (smoothstep(0.81, 0.95, vAmount)- smoothstep(0.95, 0.99, vAmount)) * texture2D( dirtTexture, vUV * 40.0 );
+				vec4 rocky = vec4(0.0, 0.0, 0.0, 0.0);//(smoothstep(0.88, 0.95, vAmount)- smoothstep(0.95, 0.99, vAmount)) * texture2D( rockyTexture, vUV * 40.0 );
+				vec4 snowy = (smoothstep(0.95, 0.99, vAmount)) * texture2D( snowyTexture, vUV * 10.0 );
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + water+ water2 + sandy +grass1 + grass2+grass3+grass4+grass5+dirt + rocky + snowy; //, 1.0);,
+			}
+
+		</script>
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+
+			uniform sampler2D bumpTexture;
+			uniform sampler2D bumpTexture2;
+			uniform float bumpScale;
+
+			varying float vAmount;
+			varying vec2 vUV;
+
+			void main() 
+			{ 
+				vUV = uv;
+				vec4 bumpData = texture2D( bumpTexture, uv );
+				vec4 bumpData2 = texture2D( bumpTexture2, uv );
+				
+				vAmount = bumpData.r; // assuming map is grayscale it doesn't matter if you use r, g, or b.
+				
+				if (vAmount<0.2){
+					vAmount = bumpData.r;
+				}
+				
+				//vAmount = bumpData2.r;
+				
+				// move the position along the normal
+				vec3 newPosition = position + normal * bumpScale * vAmount;
+				
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( newPosition, 1.0 );
+			}
+
+		</script>
+
+		<script type="module">
+
+			import * as THREE from './threejs/three.module.js';
+
+			import { GUI } from './jsm/libs/dat.gui.module.js';
+
+			import { MapControls } from './jsm/controls/OrbitControls.js';
+			import { Sky } from './jsm/objects/Sky.js';
+			import { Water } from './jsm/objects/Water.js';
+
+			let camera, controls, scene, renderer;
+			let uniforms;
+			let water, oldWater, sun;
+			
+			init();
+			//render(); // remove when using next line for animation loop (requestAnimationFrame)
+			animate();
+
+			function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xcccccc );
+				scene.fog = new THREE.FogExp2( 0xcccccc, 0.002 );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 10, 100000 );
+				camera.position.set( 400, 200, 0 );
+				
+				// Water
+				//const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
+				const waterGeometry = new THREE.PlaneGeometry( 6000, 4000, 1, 1 );
+
+				water = new Water(
+					waterGeometry,
+					{
+						textureWidth: 512,
+						textureHeight: 512,
+						waterNormals: new THREE.TextureLoader().load( 'images/waternormals.jpg', function ( texture ) {
+
+							texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+
+						} ),
+						alpha: 0.90,
+						sunDirection: new THREE.Vector3(),
+						sunColor: 0xffffff,
+						waterColor: 0x001e0f,
+						distortionScale: 3.7,
+						fog: scene.fog !== undefined
+					}
+				);
+				water.material.transparent = true;
+				water.rotation.x = - Math.PI / 2;
+				scene.add( water );
+				
+				sun = new THREE.Vector3();
+				
+				const sky = new Sky();
+				sky.scale.setScalar( 10000 );
+				scene.add( sky );
+				
+				const skyUniforms = sky.material.uniforms;
+				skyUniforms[ 'turbidity' ].value = 10;
+				skyUniforms[ 'rayleigh' ].value = 2;
+				skyUniforms[ 'mieCoefficient' ].value = 0.005;
+				skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+
+				const parameters = {
+					oldWater: false,
+					inclination: 0.22,
+					azimuth: 0.1
+				};
+				
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+
+				function updateSun() {
+
+					const theta = Math.PI * ( parameters.inclination - 0.5 );
+					const phi = 2 * Math.PI * ( parameters.azimuth - 0.5 );
+
+					sun.x = Math.cos( phi );
+					sun.y = Math.sin( phi ) * Math.sin( theta );
+					sun.z = Math.sin( phi ) * Math.cos( theta );
+
+					sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
+					water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+
+					scene.environment = pmremGenerator.fromScene( sky ).texture;
+
+				}
+				
+				function toggleWater() {
+
+					if (parameters.oldWater){
+						water.visible=false;
+						oldWater.visible=true;
+					}else{
+						water.visible=true;
+						oldWater.visible=false;
+					}
+				}
+
+				updateSun();
+
+				// controls
+
+				controls = new MapControls( camera, renderer.domElement );
+
+				//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+
+				controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+				controls.dampingFactor = 0.05;
+
+				controls.screenSpacePanning = false;
+
+				controls.minDistance = 50;
+				controls.maxDistance = 1500;
+
+				controls.maxPolarAngle = Math.PI / 2;
+
+				// world
+				
+				// texture used to generate "bumpiness"
+				// var bumpTexture = new THREE.ImageUtils.loadTexture( 'images/marmar_fill_sea2237.png' );
+				var bumpTexture = new THREE.ImageUtils.loadTexture( 'images/marmar_fill_sea_plus.png' );
+				bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping; 
+				
+				//var bumpTexture2 = new THREE.ImageUtils.loadTexture( 'images/marmara_fill_sea01_srtm.png' );
+				// bumpTexture2.wrapS = bumpTexture2.wrapT = THREE.RepeatWrapping; 
+				// magnitude of normal displacement
+				
+				// magnitude of normal displacement
+				var bumpScale   = 200.0;
+				
+				var oceanTexture = new THREE.ImageUtils.loadTexture( 'images/dirt-512.jpg' );
+				oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var sandyTexture = new THREE.ImageUtils.loadTexture( 'images/sand-512.jpg' );
+				sandyTexture.wrapS = sandyTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var grass1Texture = new THREE.ImageUtils.loadTexture( 'images/grass1.jpg' );
+				grass1Texture.wrapS = grass1Texture.wrapT = THREE.RepeatWrapping; 
+				
+				var grass2Texture = new THREE.ImageUtils.loadTexture( 'images/grass2.jpg' );
+				grass2Texture.wrapS = grass2Texture.wrapT = THREE.RepeatWrapping; 				
+				
+				var grass3Texture = new THREE.ImageUtils.loadTexture( 'images/grass3.jpg' );
+				grass3Texture.wrapS = grass3Texture.wrapT = THREE.RepeatWrapping; 
+
+				var grass4Texture = new THREE.ImageUtils.loadTexture( 'images/grass4.jpg' );
+				grass4Texture.wrapS = grass4Texture.wrapT = THREE.RepeatWrapping; 
+				
+				var grass5Texture = new THREE.ImageUtils.loadTexture( 'images/grass5.jpg' );
+				grass5Texture.wrapS = grass5Texture.wrapT = THREE.RepeatWrapping; 
+				
+				var dirtTexture = new THREE.ImageUtils.loadTexture( 'images/dirt.jpg' );
+				dirtTexture.wrapS = dirtTexture.wrapT = THREE.RepeatWrapping; 
+								
+				var rockyTexture = new THREE.ImageUtils.loadTexture( 'images/rock-512.jpg' );
+				rockyTexture.wrapS = rockyTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var snowyTexture = new THREE.ImageUtils.loadTexture( 'images/snow-512.jpg' );
+				snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
+			
+				// use "this." to create global object
+				uniforms = {
+					bumpTexture:	{ type: "t", value: bumpTexture },
+					//bumpTexture2:	{ type: "t", value: bumpTexture2 },
+					bumpScale:	    { type: "f", value: bumpScale },
+					oceanTexture:	{ type: "t", value: oceanTexture },
+					sandyTexture:	{ type: "t", value: sandyTexture },
+					grass1Texture:	{ type: "t", value: grass1Texture },
+					grass2Texture:	{ type: "t", value: grass2Texture },
+					grass3Texture:	{ type: "t", value: grass3Texture },
+					grass4Texture:	{ type: "t", value: grass4Texture },
+					grass5Texture:	{ type: "t", value: grass5Texture },
+					dirtTexture:	{ type: "t", value: dirtTexture },
+					rockyTexture:	{ type: "t", value: rockyTexture },
+					snowyTexture:	{ type: "t", value: snowyTexture },
+				};
+				
+				
+				var customMaterial = new THREE.ShaderMaterial( 
+				{
+					uniforms: uniforms,
+					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+				}   
+				);
+				
+				var planeGeo = new THREE.PlaneGeometry( 6000, 4000, 1200, 800 );
+				var plane = new THREE.Mesh(	planeGeo, customMaterial );
+				plane.rotation.x = -Math.PI / 2;
+				plane.position.y =  -94.8;
+				plane.renderOrder = 0;
+				scene.add( plane );
+				
+				var oldWaterGeo = new THREE.PlaneGeometry( 6000, 4000, 1, 1 );
+				var oldWaterTex = new THREE.ImageUtils.loadTexture( 'images/water512.jpg' );
+				oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping; 
+				oldWaterTex.repeat.set(5,5);
+				
+				// var waterMat = new THREE.MeshBasicMaterial( {map: bumpTexture, transparent:false, opacity:1.0 ,depthWrite: true} );
+				var oldWaterMat = new THREE.MeshBasicMaterial( {map: oldWaterTex, transparent:true, opacity:0.4} );
+				oldWater = new THREE.Mesh(	oldWaterGeo, oldWaterMat );
+				oldWater.rotation.x = -Math.PI / 2;
+				oldWater.position.y = 0;
+				oldWater.renderOrder = 20;
+				oldWater.visible = parameters.oldWater;
+				scene.add( oldWater );
+
+				// lights
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				//scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				//scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				//scene.add( ambientLight );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+
+				const gui = new GUI();
+				gui.add( controls, 'screenSpacePanning' );
+				
+				const folderSky = gui.addFolder( 'Sky' );
+				folderSky.add( parameters, 'inclination', 0, 0.5, 0.0001 ).onChange( updateSun );
+				folderSky.add( parameters, 'azimuth', 0, 1, 0.0001 ).onChange( updateSun );
+				folderSky.open();
+
+				const waterUniforms = water.material.uniforms;
+
+				const folderWater = gui.addFolder( 'Water' );
+				folderWater.add( parameters, 'oldWater' ).name( 'Toggle water' ).onChange(toggleWater);
+				folderWater.add( waterUniforms.distortionScale, 'value', 0, 8, 0.1 ).name( 'distortionScale' );
+				folderWater.add( waterUniforms.size, 'value', 0.1, 10, 0.1 ).name( 'size' );
+				folderWater.add( waterUniforms.alpha, 'value', 0.85, 1, .01 ).name( 'alpha' );
+				folderWater.open();
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+				render();
+
+			}
+
+			function render() {
+				const time = performance.now() * 0.001;
+				water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
