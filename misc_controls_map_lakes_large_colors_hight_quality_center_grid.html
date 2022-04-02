@@ -54,15 +54,19 @@
 		<script id="vertexShader" type="x-shader/x-vertex">
 
 			uniform sampler2D bumpTexture;
+			uniform vec2 offset;
 			uniform float bumpScale;
+			uniform vec2 tUV;
 
 			varying float vAmount;
 			varying vec2 vUV;
+			varying vec2 ttUV;
 
 			void main() 
 			{ 
 				vUV = uv;
-				vec4 bumpData = texture2D( bumpTexture, uv );
+				ttUV = vec2(tUV.r+uv.r/3.0, tUV.g+uv.g/3.0);
+				vec4 bumpData = texture2D( bumpTexture, ttUV );
 				
 				vAmount = bumpData.r; // assuming map is grayscale it doesn't matter if you use r, g, or b.
 				
@@ -225,35 +229,53 @@
 				var snowyTexture = new THREE.ImageUtils.loadTexture( 'images/snow-512.jpg' );
 				snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
 			
-				// use "this." to create global object
-				uniforms = {
-					bumpTexture:	{ type: "t", value: bumpTexture },
-					bumpScale:	    { type: "f", value: bumpScale },
-					oceanTexture:	{ type: "t", value: oceanTexture },
-					sandyTexture:	{ type: "t", value: sandyTexture },
-					grassTexture:	{ type: "t", value: grassTexture },
-					grass2Texture:	{ type: "t", value: grass2Texture },
-					rockyTexture:	{ type: "t", value: rockyTexture },
-					snowyTexture:	{ type: "t", value: snowyTexture },
-				};
+				;
 				
-				
-				var customMaterial = new THREE.ShaderMaterial( 
-				{
-					uniforms: uniforms,
-					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
-					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
-				}   
-				);
-				
+				const wireframeMaterial = new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true, transparent: true } );
+
 				//var planeGeo = new THREE.PlaneGeometry( 200000, 120000, 3000, 1800 );
-				var planeGeo = new THREE.PlaneGeometry( 200000, 120000, 300, 180 );
-				var plane = new THREE.Mesh(	planeGeo, customMaterial );
-				plane.rotation.x = -Math.PI / 2;
-				plane.position.y =  -94.8;
-				plane.position.y =  -2280;
-				plane.renderOrder = 0;
-				scene.add( plane );
+				var planeGeoCenter= new THREE.PlaneGeometry( 60000, 40000, 3000, 1800 );
+				var planeCenter = new THREE.Mesh(	planeGeoCenter, buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, new THREE.Vector2(0.3333,0.3333)) );
+				planeCenter.rotation.x = -Math.PI / 2;
+				planeCenter.position.x =  0;
+				planeCenter.position.z =  0;
+				planeCenter.position.y =   -2280;
+				planeCenter.renderOrder = 0;
+				scene.add( planeCenter );
+
+
+				var planeGeoSide= new THREE.PlaneGeometry( 60000, 40000, 300, 180 );
+				var planeLeft = new THREE.Mesh(	planeGeoSide, buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, new THREE.Vector2(0.0,0.3333)) );
+				planeLeft.rotation.x = -Math.PI / 2;
+				planeLeft.position.x =  -60000;
+				planeLeft.position.y =  -2280;
+				planeLeft.renderOrder = 0;
+				scene.add( planeLeft );
+
+
+				var planeRight = new THREE.Mesh(	planeGeoSide, buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, new THREE.Vector2(0.6666,0.3333)) );
+				planeRight.rotation.x = -Math.PI / 2;
+				planeRight.position.x =  60000;
+				planeRight.position.y =  -2280;
+				planeRight.renderOrder = 0;
+				scene.add( planeRight );
+
+
+				var planeTop = new THREE.Mesh(	planeGeoSide, buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, new THREE.Vector2(0.3333,0.6666)) );
+				planeTop.rotation.x = -Math.PI / 2;
+				planeTop.position.z =  -40000;
+				planeTop.position.y =  -2280;
+				planeTop.renderOrder = 0;
+				scene.add( planeTop );
+
+
+				var planeBottom = new THREE.Mesh(	planeGeoSide, buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, new THREE.Vector2(0.3333,0.0)) );
+				planeBottom.rotation.x = -Math.PI / 2;
+				planeBottom.position.z =  40000;
+				planeBottom.position.y =  -2280;
+				planeBottom.renderOrder = 0;
+				scene.add( planeBottom );
+
 				
 				var oldWaterGeo = new THREE.PlaneGeometry( 200000, 120000, 1, 1 );
 				var oldWaterTex = new THREE.ImageUtils.loadTexture( 'images/water512.jpg' );
@@ -303,6 +325,37 @@
 				folderWater.add( waterUniforms.size, 'value', 0.1, 10, 0.1 ).name( 'size' );
 				folderWater.add( waterUniforms.alpha, 'value', 0.85, 1, .01 ).name( 'alpha' );
 				folderWater.open();
+
+			}
+
+			function buildCustomMaterial(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture, uvOffset){
+
+					// use "this." to create global object
+					uniforms = {
+					bumpTexture:	{ type: "t", value: bumpTexture },
+					bumpScale:	    { type: "f", value: bumpScale },
+					oceanTexture:	{ type: "t", value: oceanTexture },
+					sandyTexture:	{ type: "t", value: sandyTexture },
+					grassTexture:	{ type: "t", value: grassTexture },
+					grass2Texture:	{ type: "t", value: grass2Texture },
+					rockyTexture:	{ type: "t", value: rockyTexture },
+					snowyTexture:	{ type: "t", value: snowyTexture },
+					tUV:	{ value: uvOffset },
+				};
+				
+				
+				console.log(uniforms)
+				console.log(uvOffset)
+
+				var customMaterial = new THREE.ShaderMaterial( 
+				{
+					uniforms: uniforms,
+					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+				}   
+				);
+
+				return customMaterial;
 
 			}
 
