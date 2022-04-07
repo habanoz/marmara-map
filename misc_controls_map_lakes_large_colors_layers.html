@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - map controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #ccc;
+				color: #000;
+			}
+
+			a {
+				color: #f00;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - map controls
+		</div>
+		
+		<script id="fragmentShader" type="x-shader/x-fragment">
+
+			uniform sampler2D oceanTexture;
+			uniform sampler2D sandyTexture;
+			uniform sampler2D grassTexture;
+			uniform sampler2D grass2Texture;
+			uniform sampler2D rockyTexture;
+			uniform sampler2D snowyTexture;
+
+			varying vec2 vUV;
+
+			varying float vAmount;
+
+			void main() 
+			{	
+								
+				vec4 snow  = smoothstep(0.90, 0.99, vAmount) * vec4(1.0, 1.0, 1.0, 0.0); 
+				vec4 rock = ( smoothstep(0.80, 0.95, vAmount) - smoothstep(0.90, 0.96, vAmount) ) * vec4(0.7, 0.5, 0.0, 0.0); 
+				vec4 plateu  =  (smoothstep(0.70, 0.90, vAmount)-smoothstep(0.80, 0.90, vAmount)) * vec4(0.4, 0.8, 0.4, 0.0); 
+				vec4 forest  =  (smoothstep(0.60, 0.80, vAmount)-smoothstep(0.70, 0.80, vAmount)) * vec4(0.1, 0.90, 0.1, 0.0); 
+				vec4 farms  =  (smoothstep(0.50, 0.70, vAmount)-smoothstep(0.60, 0.70, vAmount)) * vec4(0.6, 0.9, 0.0, 0.0); 
+				vec4 sand = (smoothstep(0.40, 0.60, vAmount)- smoothstep(0.50, 0.60, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
+				// vec4 sandy = (smoothstep(0.30, 0.50, vAmount)- smoothstep(0.40, 0.50, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
+				
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + sand + farms + forest + plateu + snow + rock;
+			}
+
+		</script>
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+
+			uniform sampler2D bumpTexture;
+			uniform vec2 offset;
+			uniform float bumpScale;
+			uniform vec2 tUV;
+			uniform float nU;
+			uniform float nV;
+
+			varying float vAmount;
+			varying vec2 vUV;
+			varying vec2 ttUV;
+
+			void main() 
+			{ 
+				vUV = uv;
+
+				ttUV = vec2(tUV.r+uv.r/nU, tUV.g+uv.g/nV);
+				vec4 bumpData = texture2D( bumpTexture, ttUV );
+				
+				vAmount = bumpData.r; // assuming map is grayscale it doesn't matter if you use r, g, or b.
+				
+				// move the position along the normal
+				vec3 newPosition = position + normal * bumpScale * vAmount;
+				
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( newPosition, 1.0 );
+			}
+
+		</script>
+
+		<script type="module">
+
+			import * as THREE from './threejs/three.module.js';
+
+			import { GUI } from './jsm/libs/dat.gui.module.js';
+
+			import { MapControls } from './jsm/controls/SlideOrbitControls.js';
+			import { Sky } from './jsm/objects/Sky.js';
+			import { Water } from './jsm/objects/Water.js';
+
+			let camera, controls, scene, renderer;
+			let uniforms;
+			let water, oldWater, sun;
+			let group, group0, group1, group2, group3, group4, group5, group6, group7;
+			let uniformsTemplate;
+
+			let MAX_DIST = 100_000;
+			let BUMP_SCALE = 5000.0;
+			let PX_WIDTH = 6834.0;
+			let PX_HEIGHT = 4422.0;
+
+			let SCENE_WIDTH=200000;
+			let SCENE_HEIGHT=120000;
+
+			init();
+			//render(); // remove when using next line for animation loop (requestAnimationFrame)
+			animate();
+
+			function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xcccccc );
+				scene.fog = new THREE.FogExp2( 0xcccccc, 0.002 );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 100, 200000 );
+				
+				// Water
+				//const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
+				const waterGeometry = new THREE.PlaneGeometry( SCENE_WIDTH, SCENE_HEIGHT, 1000, 600 );
+
+				water = new Water(
+					waterGeometry,
+					{
+						textureWidth: 512,
+						textureHeight: 512,
+						waterNormals: new THREE.TextureLoader().load( 'images/waternormals.jpg', function ( texture ) {
+
+							texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+
+						} ),
+						alpha: 0.90,
+						sunDirection: new THREE.Vector3(),
+						sunColor: 0xffffff,
+						waterColor: 0x001e0f,
+						distortionScale: 3.7,
+						fog: scene.fog !== undefined
+					}
+				);
+				water.material.transparent = true;
+				water.rotation.x = - Math.PI / 2;
+				scene.add( water );
+				
+				sun = new THREE.Vector3();
+				
+				const sky = new Sky();
+				sky.scale.setScalar( 300000 );
+				scene.add( sky );
+				
+				const skyUniforms = sky.material.uniforms;
+				skyUniforms[ 'turbidity' ].value = 10;
+				skyUniforms[ 'rayleigh' ].value = 2;
+				skyUniforms[ 'mieCoefficient' ].value = 0.005;
+				skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+
+				const parameters = {
+					oldWater: false,
+					inclination: 0.22,
+					azimuth: 0.1
+				};
+				
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+
+				function updateSun() {
+
+					const theta = Math.PI * ( parameters.inclination - 0.5 );
+					const phi = 2 * Math.PI * ( parameters.azimuth - 0.5 );
+
+					sun.x = Math.cos( phi );
+					sun.y = Math.sin( phi ) * Math.sin( theta );
+					sun.z = Math.sin( phi ) * Math.cos( theta );
+
+					sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
+					water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+
+					scene.environment = pmremGenerator.fromScene( sky ).texture;
+
+				}
+				
+				function toggleWater() {
+
+					if (parameters.oldWater){
+						water.visible=false;
+						oldWater.visible=true;
+					}else{
+						water.visible=true;
+						oldWater.visible=false;
+					}
+				}
+
+				updateSun();
+
+				// controls
+
+				controls = new MapControls( camera, renderer.domElement );
+
+				//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+
+				controls.enableDamping = false; // an animation loop is required when either damping or auto-rotation are enabled
+				controls.dampingFactor = 0.05;
+
+				controls.screenSpacePanning = false;
+
+				controls.minDistance = 50;
+				controls.maxDistance = MAX_DIST;
+
+				controls.maxPolarAngle = Math.PI / 2;
+				
+				// camera.position.set( 20000, 100000, -30000 );
+				// controls.target.copy(new THREE.Vector3(20000, 0, -30000));
+
+				camera.position.set( 0, 100000, 0 );
+				controls.target.copy(new THREE.Vector3(0, 0, 0));
+
+				// world
+				
+				// texture used to generate "bumpiness"
+				
+				// magnitude of normal displacement
+				
+				
+				uniformsTemplate = buildTemplateUniforms();
+				
+				const wireframeMaterial = new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true, transparent: true } );
+
+				//var planeGeo = new THREE.PlaneGeometry( 200000, 120000, 3000, 1800 );
+				
+				// group1 = buildGroup1(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture);
+				// group1.visible=false;
+				// scene.add(group1);
+
+				// group0 = buildGroup0(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture);
+				// group0.visible=true;
+				// scene.add(group0);
+
+				group0  = buildLayer(1,1, 0.1);
+				group0.visible = false;
+				scene.add(group0);
+
+				group1 = buildLayer(2,2, 0.2);
+				group1.visible = false;
+				scene.add(group1);
+				
+				group2 = buildLayer(4,4, 0.4);
+				group2.visible = false;
+				scene.add(group2);
+
+				group3 = buildLayer(8,8, 0.6);
+				group3.visible = false;
+				scene.add(group3);
+
+				group4 = buildLayer(16,16, 0.8);
+				group4.visible = false;
+				scene.add(group4);
+
+				group5 = buildLayer(32,32, 1.0);
+				group5.visible = false;
+				scene.add(group5);
+
+				group = group0;
+
+				
+				var oldWaterGeo = new THREE.PlaneGeometry( SCENE_WIDTH, SCENE_HEIGHT, 1, 1 );
+				var oldWaterTex = new THREE.ImageUtils.loadTexture( 'images/water512.jpg' );
+				oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping; 
+				oldWaterTex.repeat.set(5,5);
+				
+				// var waterMat = new THREE.MeshBasicMaterial( {map: bumpTexture, transparent:false, opacity:1.0 ,depthWrite: true} );
+				var oldWaterMat = new THREE.MeshBasicMaterial( {map: oldWaterTex, transparent:true, opacity:0.4} );
+				oldWater = new THREE.Mesh(	oldWaterGeo, oldWaterMat );
+				oldWater.rotation.x = -Math.PI / 2;
+				oldWater.position.y = 0;
+				oldWater.renderOrder = 20;
+				oldWater.visible = parameters.oldWater;
+				scene.add( oldWater );
+
+				// lights
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				//scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				//scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				//scene.add( ambientLight );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+				var options = {
+					zoomIn: function() {
+						controls.scale=0.95;
+					},
+					zoomOut: function() {
+						controls.scale=1.05;
+					},
+					go2d:function(){
+						camera.position.x =controls.target.x;
+						camera.position.z =controls.target.z;
+					},
+					hide:function(){
+						group.visible=false;
+					},
+					show:function(){
+						group.visible=true;
+					}
+				};
+
+				const gui = new GUI();
+				gui.add( controls, 'screenSpacePanning' );
+				gui.add( controls.pSphere, 'radius',0,MAX_DIST ).onChange(render).listen();
+				gui.add( camera.position, 'y',0,MAX_DIST,1000 ).onChange(render).listen();
+				//gui.add( controls, 'scale',0.95, 1.05,0.1 ).onChange(render).listen();
+				gui.add( options, 'zoomIn');
+				gui.add( options, 'zoomOut');
+				gui.add( options, 'go2d');
+				gui.add( options, 'hide');
+				gui.add( options, 'show');
+				
+				
+
+				const folderSky = gui.addFolder( 'Sky' );
+				folderSky.add( parameters, 'inclination', 0, 0.5, 0.0001 ).onChange( updateSun );
+				folderSky.add( parameters, 'azimuth', 0, 1, 0.0001 ).onChange( updateSun );
+				folderSky.open();
+
+				const waterUniforms = water.material.uniforms;
+
+				const folderWater = gui.addFolder( 'Water' );
+				folderWater.add( parameters, 'oldWater' ).name( 'Toggle water' ).onChange(toggleWater);
+				folderWater.add( waterUniforms.distortionScale, 'value', 0, 8, 0.1 ).name( 'distortionScale' );
+				folderWater.add( waterUniforms.size, 'value', 0.1, 10, 0.1 ).name( 'size' );
+				folderWater.add( waterUniforms.alpha, 'value', 0.85, 1, .01 ).name( 'alpha' );
+				folderWater.open();
+
+			}
+
+			function buildTemplateUniforms(){
+				var bumpTexture = new THREE.ImageUtils.loadTexture( 'images/marmara_gray3.png' );
+				bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping; 
+
+				var oceanTexture = new THREE.ImageUtils.loadTexture( 'images/dirt-512.jpg' );
+				oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var sandyTexture = new THREE.ImageUtils.loadTexture( 'images/dirt.jpg' );
+				sandyTexture.wrapS = sandyTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var grassTexture = new THREE.ImageUtils.loadTexture( 'images/grass-512.jpg' );
+				grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var grass2Texture = new THREE.ImageUtils.loadTexture( 'images/grass-512-2.jpg' );
+				grass2Texture.wrapS = grass2Texture.wrapT = THREE.RepeatWrapping; 
+				
+				var rockyTexture = new THREE.ImageUtils.loadTexture( 'images/rock-512.jpg' );
+				rockyTexture.wrapS = rockyTexture.wrapT = THREE.RepeatWrapping; 
+				
+				var snowyTexture = new THREE.ImageUtils.loadTexture( 'images/snow-512.jpg' );
+				snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
+			
+				var uniforms = {
+					bumpTexture:	{ type: "t", value: bumpTexture },
+					bumpScale:	    { type: "f", value: BUMP_SCALE },
+					oceanTexture:	{ type: "t", value: oceanTexture },
+					sandyTexture:	{ type: "t", value: sandyTexture },
+					grassTexture:	{ type: "t", value: grassTexture },
+					grass2Texture:	{ type: "t", value: grass2Texture },
+					rockyTexture:	{ type: "t", value: rockyTexture },
+					snowyTexture:	{ type: "t", value: snowyTexture },
+				};
+
+				return uniforms;
+			}
+
+			function buildCustomMaterial(uvOffset, nU, nV){
+
+					// use "this." to create global object
+				//uniforms = new Map(uniformsTemplate);
+				var uniforms = Object.assign({}, uniformsTemplate);
+				uniforms['tUV']={ value: uvOffset };
+				uniforms['nU']={ value: nU };
+				uniforms['nV']={ value: nV };
+				
+				
+				var customMaterial = new THREE.ShaderMaterial( 
+				{
+					uniforms: uniforms,
+					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+				}   
+				);
+
+				return customMaterial;
+
+			}
+
+			function buildLayer(nHorizontal, nVertical, scale){
+				const group = new THREE.Group();
+				const gridPlaneWidth = SCENE_WIDTH/nHorizontal;
+				const gridPlaneHeight = SCENE_HEIGHT/nVertical;
+				const gridPlanePxWidth = PX_WIDTH/nHorizontal;
+				const gridPlanePxHeight = PX_HEIGHT/nVertical;
+				const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth ,gridPlaneHeight , gridPlanePxWidth*scale, gridPlanePxHeight*scale );
+
+				for (let i = 0; i < nHorizontal; i++) {
+					for (let j = 0; j < nVertical; j++) {
+
+						var planeGrid = new THREE.Mesh(	gridPlaneGeometry, buildCustomMaterial(new THREE.Vector2(i/nHorizontal,j/nVertical), nHorizontal, nVertical) );
+
+						planeGrid.rotation.x = -Math.PI / 2;
+						planeGrid.position.x =  (i-(nHorizontal/2)+0.5)*gridPlaneWidth;
+						planeGrid.position.z =  ((nVertical/2)-j-0.5)*gridPlaneHeight;
+						planeGrid.position.y =  -2280;
+						planeGrid.renderOrder = 0;
+						console.log('pos %o', planeGrid.position)
+						group.add(planeGrid);
+					}
+				}
+
+				return group;
+			}
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+				render();
+
+			}
+
+			function render() {
+				const time = performance.now() * 0.001;
+				water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+				renderer.render( scene, camera );
+				
+				group.visible=false;
+				if (camera.position.y > 80_000){
+					console.log("Group 0");
+					group=group0;
+				} else if (camera.position.y > 64_000){
+					console.log("Group 1");
+					group=group1;
+				}else if (camera.position.y > 48_000){
+					console.log("Group 2");
+					group=group2;
+				}else if (camera.position.y > 32_000){
+					console.log("Group 3");
+					group=group3;
+				}else if (camera.position.y > 16_000){
+					console.log("Group 4");
+					group=group4;
+				}else {
+					console.log("Group 5");
+					group=group5;
+				}
+
+				group.visible=true;
+				// console.log("height %s",Math.floor(camera.position.y/1000));
+				// console.log("target %d %d %d",controls.target.x, controls.target.y, controls.target.z);
+				// console.log("camera %d %d %d",camera.position.x,camera.position.y,camera.position.z);
+				
+				const xGrid = Math.floor(camera.position.x/10);
+				const zGrid = Math.floor(camera.position.z/10);
+				const layer = Math.floor(camera.position.y/1000);
+
+				// console.log("Grid layer:%d x:%d z:%d",layer, xGrid, zGrid);
+			}
+
+		</script>
+
+	</body>
+</html>
