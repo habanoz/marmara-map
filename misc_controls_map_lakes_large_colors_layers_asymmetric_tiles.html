@@ -97,7 +97,10 @@
 			let camera, controls, scene, renderer;
 			let uniforms;
 			let water, oldWater, sun;
-			let group, group0, group1, group2, group3, group4, group5, group6, group7;
+			let groups, group, group0, group1, group2, group3, group4, group5, group6, group7;
+			let grid0, grid1, grid2, grid3, grid4, grid5, grid6, grid7;
+			let visibleTiles=[];
+
 			let uniformsTemplate;
 
 			let MAX_DIST = 100_000;
@@ -240,42 +243,38 @@
 				
 				const wireframeMaterial = new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true, transparent: true } );
 
-				//var planeGeo = new THREE.PlaneGeometry( 200000, 120000, 3000, 1800 );
-				
-				// group1 = buildGroup1(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture);
-				// group1.visible=false;
-				// scene.add(group1);
-
-				// group0 = buildGroup0(bumpTexture, bumpScale, oceanTexture, sandyTexture, grassTexture, grass2Texture, rockyTexture, snowyTexture);
-				// group0.visible=true;
-				// scene.add(group0);
-
-				group0  = buildLayer(1,1, 0.1);
-				group0.visible = false;
+				grid0 = buildLayer(1,1, 0.1, 0);
+				group0 = groupGridDef(grid0, true);
+				group0.visible = true;
 				scene.add(group0);
 
-				group1 = buildLayer(2,2, 0.2);
-				group1.visible = false;
+				grid1 = buildLayer(2,2, 0.2, 1);
+				group1 = groupGrid(grid1);
+				group1.visible = true;
 				scene.add(group1);
 				
-				group2 = buildLayer(4,4, 0.4);
-				group2.visible = false;
+				grid2 = buildLayer(4,4, 0.4, 2);
+				group2 = groupGrid(grid2);
+				group2.visible = true;
 				scene.add(group2);
 
-				group3 = buildLayer(8,8, 0.6);
-				group3.visible = false;
+				grid3 = buildLayer(8,8, 0.6, 3);
+				group3 = groupGrid(grid3);
+				group3.visible = true;
 				scene.add(group3);
 
-				group4 = buildLayer(16,16, 0.8);
-				group4.visible = false;
+				grid4 = buildLayer(16,16, 0.8, 4);
+				group4 = groupGrid(grid4);
+				group4.visible = true;
 				scene.add(group4);
 
-				group5 = buildLayer(32,32, 1.0);
-				group5.visible = false;
+				grid5 = buildLayer(32,32, 1.0, 5);
+				group5 = groupGrid(grid5);
+				group5.visible = true;
 				scene.add(group5);
 
-				group = group0;
-
+				// group = group0;
+				groups = [group1, group2, group3, group4, group5];
 				
 				var oldWaterGeo = new THREE.PlaneGeometry( SCENE_WIDTH, SCENE_HEIGHT, 1, 1 );
 				var oldWaterTex = new THREE.ImageUtils.loadTexture( 'images/water512.jpg' );
@@ -413,32 +412,54 @@
 
 			}
 
-			function buildLayer(nHorizontal, nVertical, scale){
-				const group = new THREE.Group();
+			function buildLayer(nHorizontal, nVertical, scale, renderOrder){
+				// const group = new THREE.Group();
 				const gridPlaneWidth = SCENE_WIDTH/nHorizontal;
 				const gridPlaneHeight = SCENE_HEIGHT/nVertical;
 				const gridPlanePxWidth = PX_WIDTH/nHorizontal;
 				const gridPlanePxHeight = PX_HEIGHT/nVertical;
 				const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth ,gridPlaneHeight , gridPlanePxWidth*scale, gridPlanePxHeight*scale );
 
+				const grid = [];
 				for (let i = 0; i < nHorizontal; i++) {
+					const hGrid = [];
+					grid[i]=hGrid;
 					for (let j = 0; j < nVertical; j++) {
-
+						
 						var planeGrid = new THREE.Mesh(	gridPlaneGeometry, buildCustomMaterial(new THREE.Vector2(i/nHorizontal,j/nVertical), nHorizontal, nVertical) );
 
 						planeGrid.rotation.x = -Math.PI / 2;
 						planeGrid.position.x =  (i-(nHorizontal/2)+0.5)*gridPlaneWidth;
 						planeGrid.position.z =  ((nVertical/2)-j-0.5)*gridPlaneHeight;
 						planeGrid.position.y =  -2280;
-						planeGrid.renderOrder = 0;
-						console.log('pos %o', planeGrid.position)
-						group.add(planeGrid);
+						planeGrid.renderOrder = renderOrder;
+						// console.log('pos %o', planeGrid.position)
+						// group.add(planeGrid);
+						hGrid[nVertical-1-j]=planeGrid;
 					}
 				}
 
-				return group;
+				return grid;
+			}
+			
+			function groupGrid(grid){
+				return groupGridDef(grid, false);
 			}
 
+			function groupGridDef(grid, defaultVisibility){
+				const grp = new THREE.Group();
+
+				for (let i = 0; i < grid.length; i++) {
+					for (let j = 0; j < grid[0].length; j++) {
+						const tile = grid[i][j];
+						tile.visible=defaultVisibility;
+					
+						grp.add(tile);
+					}
+				}
+
+				return grp;
+			}
 
 			function onWindowResize() {
 
@@ -462,40 +483,52 @@
 			function render() {
 				const time = performance.now() * 0.001;
 				water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
-				renderer.render( scene, camera );
+
+
+				visibleTiles.forEach(tile => tile.visible=false);
+				visibleTiles = [];
 				
-				group.visible=false;
-				if (camera.position.y > 80_000){
-					console.log("Group 0");
-					group=group0;
-				} else if (camera.position.y > 64_000){
-					console.log("Group 1");
-					group=group1;
-				}else if (camera.position.y > 48_000){
-					console.log("Group 2");
-					group=group2;
-				}else if (camera.position.y > 32_000){
-					console.log("Group 3");
-					group=group3;
-				}else if (camera.position.y > 16_000){
-					console.log("Group 4");
-					group=group4;
-				}else {
-					console.log("Group 5");
-					group=group5;
+				if(camera.position.y < 16_000){			
+					visibleTiles.push(findVisible(grid5));
 				}
 
-				group.visible=true;
-				// console.log("height %s",Math.floor(camera.position.y/1000));
-				// console.log("target %d %d %d",controls.target.x, controls.target.y, controls.target.z);
-				// console.log("camera %d %d %d",camera.position.x,camera.position.y,camera.position.z);
-				
-				const xGrid = Math.floor(camera.position.x/10);
-				const zGrid = Math.floor(camera.position.z/10);
-				const layer = Math.floor(camera.position.y/1000);
+				if(camera.position.y < 32_000){			
+					visibleTiles.push(findVisible(grid4));
+				}
 
-				// console.log("Grid layer:%d x:%d z:%d",layer, xGrid, zGrid);
+				if(camera.position.y < 48_000){			
+					visibleTiles.push(findVisible(grid3));
+				}
+
+				if(camera.position.y < 64_000){			
+					visibleTiles.push(findVisible(grid2));
+				}
+
+				if(camera.position.y < 80_000){			
+					visibleTiles.push(findVisible(grid1));
+				}
+
+				visibleTiles.forEach(tile => tile.visible=true);
+				
+				renderer.render( scene, camera );
+				
+		}
+
+		function findVisible(grid){
+			const rHorizontal = (camera.position.x+SCENE_WIDTH/2)/SCENE_WIDTH;
+			const rVertical = (camera.position.z+SCENE_HEIGHT/2)/SCENE_HEIGHT;
+
+			const nHor = grid.length;
+			const nVer = grid[0].length;
+			const nHorIdx = Math.max(0, Math.min(Math.floor(nHor*rHorizontal), nHor-1));
+			const nVerIdx = Math.max(0, Math.min(Math.floor(nVer*rVertical), nVer-1));
+
+			const tile  = grid[nHorIdx][nVerIdx];
+			if (tile === undefined){
+				console.log('Undefined tile for %s %s of camera %s %s', nHorIdx, nVerIdx, camera.position.x, camera.position.z);	
 			}
+			return tile;
+		}
 
 		</script>
 
