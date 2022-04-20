@@ -96,7 +96,7 @@
 		let uniforms;
 		let water, oldWater, sun;
 		let lastPost = new THREE.Vector3();
-
+		let visibleTiles = [];
 		let uniformsTemplate;
 
 		let MAX_DIST = 100_000;
@@ -123,15 +123,18 @@
 		}
 
 		let rootTile;
+		const tileGeometries = new Map();
+		const maxZoom = 6;
 
-		const stats = Stats()
-		document.body.appendChild(stats.dom)
+		const stats = Stats();
+		document.body.appendChild(stats.dom);
 
 		init();
 		//render(); // remove when using next line for animation loop (requestAnimationFrame)
 		animate();
 
 		function init() {
+			const initStartDate = new Date();
 
 			scene = new THREE.Scene();
 			scene.background = new THREE.Color(0xcccccc);
@@ -243,7 +246,7 @@
 			const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, transparent: true });
 
 			// buildGrid();
-			rootTile = new ATile(2, -SCENE_WIDTH / 2, SCENE_HEIGHT / 2, SCENE_HEIGHT, SCENE_WIDTH, 0.0, null);
+			rootTile = new ATile(0, -SCENE_WIDTH / 2, SCENE_HEIGHT / 2, SCENE_HEIGHT, SCENE_WIDTH, 0.0, null);
 			buildGridRec(rootTile);
 
 			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
@@ -319,6 +322,8 @@
 			folderWater.add(waterUniforms.size, 'value', 0.1, 10, 0.1).name('size');
 			folderWater.add(waterUniforms.alpha, 'value', 0.85, 1, .01).name('alpha');
 			folderWater.open();
+
+			console.log("Init completed in %s millis", new Date().getTime() - initStartDate);
 
 		}
 
@@ -403,12 +408,51 @@
 			const time = performance.now() * 0.001;
 			water.material.uniforms['time'].value += 1.0 / 60.0;
 
+			if (!lastPost.equals(camera.position)) {
+				visibleTiles.forEach(tile => tile.plane.visible = false);
+				visibleTiles = [];
+
+				var zoom = 0;
+				if (camera.position.y > 80_000) {
+					zoom = 0;
+				}
+				else if (camera.position.y > 64_000) {
+					zoom = 1;
+				}
+
+				else if (camera.position.y > 48_000) {
+					zoom = 2;
+				}
+
+				else if (camera.position.y > 32_000) {
+					zoom = 3;
+				}
+
+				else if (camera.position.y > 16_000) {
+					zoom = 4;
+				}
+
+				else if (camera.position.y > 8_000) {
+					zoom = 5;
+				} else {
+					zoom = 6;
+				}
+
+				findVisible(rootTile, zoom, 0, visibleTiles);
+
+				visibleTiles.forEach(tile => tile.plane.visible = true);
+
+			}
+
+
+
+
 			renderer.render(scene, camera);
 
 		}
 
 		function buildGridRec(tile) {
-			if (tile.depth < 0) return;
+			if (tile.depth > maxZoom) return;
 
 			const halfHeight = tile.height / 2;
 			const halfWidth = tile.width / 2;
@@ -422,10 +466,10 @@
 
 			const scale = tile.scale + 0.2;
 
-			const tile00 = new ATile(tile.depth - 1, tile.left, tile.top, halfHeight, halfWidth, scale, layerTile(i, j, nHorizontal, nVertical, scale));
-			const tile01 = new ATile(tile.depth - 1, tile.left + halfWidth, tile.top, halfHeight, halfWidth, scale, layerTile(i, j + 1, nHorizontal, nVertical, scale));
-			const tile10 = new ATile(tile.depth - 1, tile.left, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j, nHorizontal, nVertical, scale));
-			const tile11 = new ATile(tile.depth - 1, tile.left + halfWidth, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j + 1, nHorizontal, nVertical, scale));
+			const tile00 = new ATile(tile.depth + 1, tile.left, tile.top, halfHeight, halfWidth, scale, layerTile(i, j, nHorizontal, nVertical, scale));
+			const tile01 = new ATile(tile.depth + 1, tile.left + halfWidth, tile.top, halfHeight, halfWidth, scale, layerTile(i, j + 1, nHorizontal, nVertical, scale));
+			const tile10 = new ATile(tile.depth + 1, tile.left, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j, nHorizontal, nVertical, scale));
+			const tile11 = new ATile(tile.depth + 1, tile.left + halfWidth, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j + 1, nHorizontal, nVertical, scale));
 
 			buildGridRec(tile00);
 			buildGridRec(tile01);
@@ -439,13 +483,27 @@
 			grp.add(tile11.plane);
 			scene.add(grp);
 
-			if (tile.depth == 2) {
-				grp.visible = true;
-			} else {
-				grp.visible = false;
-			}
-
 			tile.children = [tile00, tile01, tile10, tile11];
+		}
+
+		function findVisible(tile, zoom, level, visibleTiles) {
+			const x = camera.position.x;
+			const y = camera.position.y;
+			const z = camera.position.z;
+
+			if (tile.left <= x && x <= tile.left + tile.width && tile.top-tile.height <= z && z <= tile.top && tile.children!=null) {
+				if (zoom == level) {
+					visibleTiles.push(tile.children[0]);
+					visibleTiles.push(tile.children[1]);
+					visibleTiles.push(tile.children[2]);
+					visibleTiles.push(tile.children[3]);
+				} else {
+					findVisible(tile.children[0], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[1], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[2], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[3], zoom, level + 1, visibleTiles);
+				}
+			}
 		}
 
 		function layerTile(i, j, nHorizontal, nVertical, scale) {
@@ -459,7 +517,12 @@
 			const scaledGridPlanePxWidth = gridPlanePxWidth * scale;
 			const scaledGridPlanePxHeight = gridPlanePxHeight * scale;
 
-			const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight);
+			if (!tileGeometries.has(scale)) {
+				console.log("***Geometry built for scale %s ", scale);
+				tileGeometries.set(scale, new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight));
+			}
+
+			const gridPlaneGeometry = tileGeometries.get(scale);
 
 			const uvOffset = new THREE.Vector2(i / nHorizontal, j / nVertical);
 			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(uvOffset, nHorizontal, nVertical));
@@ -470,7 +533,7 @@
 			planeGrid.position.z = ((nVertical / 2) - j - 0.5) * gridPlaneHeight;
 			planeGrid.position.y = -2280;
 
-			planeGrid.visible = true;
+			planeGrid.visible = false;
 
 			console.log("New tile i=%s,j=%s x=%s,z=%s nHorizontal=%s, nVertical=%s scale=%s gridPlaneWidth=%s, gridPlaneHeight=%s scaledGridPlanePxWidth=%s,scaledGridPlanePxHeight=%s uvOffset=%o",
 				i, j, planeGrid.position.x, planeGrid.position.z, nHorizontal, nVertical, scale, gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight, uvOffset);
