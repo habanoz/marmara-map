@@ -1,28 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title>three.js webgl - map controls</title>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="main.css">
-		<style>
-			body {
-				background-color: #ccc;
-				color: #000;
-			}
 
-			a {
-				color: #f00;
-			}
-		</style>
-	</head>
+<head>
+	<title>three.js webgl - map controls</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+	<style>
+		body {
+			background-color: #ccc;
+			color: #000;
+		}
 
-	<body>
-		<div id="info">
-			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - map controls
-		</div>
-		
-		<script id="fragmentShader" type="x-shader/x-fragment">
+		a {
+			color: #f00;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="info">
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - map controls
+	</div>
+
+	<script id="fragmentShader" type="x-shader/x-fragment">
 
 			uniform sampler2D oceanTexture;
 			uniform sampler2D sandyTexture;
@@ -51,7 +52,7 @@
 
 		</script>
 
-		<script id="vertexShader" type="x-shader/x-vertex">
+	<script id="vertexShader" type="x-shader/x-vertex">
 
 			uniform sampler2D bumpTexture;
 			uniform vec2 offset;
@@ -81,469 +82,404 @@
 
 		</script>
 
-		<script type="module">
+	<script type="module">
 
-			import * as THREE from './threejs/three.module.js';
+		import * as THREE from './threejs/three.module.js';
 
-			import { GUI } from './jsm/libs/dat.gui.module.js';
+		import { GUI } from './jsm/libs/dat.gui.module.js';
+		import { MapControls } from './jsm/controls/SlideOrbitControls.js';
+		import { Sky } from './jsm/objects/Sky.js';
+		import { Water } from './jsm/objects/Water.js';
+		import Stats from './jsm/libs/stats.module.js';
 
-			import { MapControls } from './jsm/controls/SlideOrbitControls.js';
-			import { Sky } from './jsm/objects/Sky.js';
-			import { Water } from './jsm/objects/Water.js';
+		let camera, controls, scene, renderer;
+		let uniforms;
+		let water, oldWater, sun;
+		let lastPost = new THREE.Vector3();
 
-			import Stats from './jsm/libs/stats.module.js';
-			// import { GPUStatsPanel } from './jsm/utils/GPUStatsPanel.js';
+		let uniformsTemplate;
 
-			let camera, controls, scene, renderer;
-			let uniforms;
-			let water, oldWater, sun;
-			let groups, group, group0, group1, group2, group3, group4, group5, group6, group7;
-			let grid0, grid1, grid2, grid3, grid4, grid5, grid6, grid7;
-			let visibleTiles=[];
-			let lastPost=new THREE.Vector3();
+		let MAX_DIST = 100_000;
+		let BUMP_SCALE = 5000.0;
+		let PX_WIDTH = 6834.0;
+		let PX_HEIGHT = 4422.0;
 
-			let uniformsTemplate;
+		let SCENE_WIDTH = 200000;
+		let SCENE_HEIGHT = 120000;
 
-			let MAX_DIST = 100_000;
-			let BUMP_SCALE = 5000.0;
-			let PX_WIDTH = 6834.0;
-			let PX_HEIGHT = 4422.0;
+		class ATile {
+			constructor(depth, left, top, height, width, scale, plane) {
+				this.depth = depth;
+				this.top = top;
+				this.left = left;
+				this.height = height;
+				this.width = width;
+				this.scale = scale;
 
-			let SCENE_WIDTH=200000;
-			let SCENE_HEIGHT=120000;
+				this.plane = plane;
 
-			const stats = Stats()
-			document.body.appendChild(stats.dom)
+				this.children = null;
+			}
+		}
 
-			//gpuPanel = new GPUStatsPanel( renderer.getContext() );
-			//stats.addPanel( gpuPanel );
-			//stats.showPanel( 0 );
+		let rootTile;
 
-			init();
-			//render(); // remove when using next line for animation loop (requestAnimationFrame)
-			animate();
+		const stats = Stats()
+		document.body.appendChild(stats.dom)
 
-			function init() {
+		init();
+		//render(); // remove when using next line for animation loop (requestAnimationFrame)
+		animate();
 
-				scene = new THREE.Scene();
-				scene.background = new THREE.Color( 0xcccccc );
-				scene.fog = new THREE.FogExp2( 0xcccccc, 0.002 );
+		function init() {
 
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-				document.body.appendChild( renderer.domElement );
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color(0xcccccc);
+			scene.fog = new THREE.FogExp2(0xcccccc, 0.002);
 
-				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 100, 200000 );
-				
-				// Water
-				//const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
-				const waterGeometry = new THREE.PlaneGeometry( SCENE_WIDTH, SCENE_HEIGHT, 1000, 600 );
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
 
-				water = new Water(
-					waterGeometry,
-					{
-						textureWidth: 512,
-						textureHeight: 512,
-						waterNormals: new THREE.TextureLoader().load( 'images/waternormals.jpg', function ( texture ) {
+			camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 100, 200000);
 
-							texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+			// Water
+			//const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
+			const waterGeometry = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1000, 600);
 
-						} ),
-						alpha: 0.90,
-						sunDirection: new THREE.Vector3(),
-						sunColor: 0xffffff,
-						waterColor: 0x001e0f,
-						distortionScale: 3.7,
-						fog: scene.fog !== undefined
-					}
-				);
-				water.material.transparent = true;
-				water.rotation.x = - Math.PI / 2;
-				scene.add( water );
-				
-				sun = new THREE.Vector3();
-				
-				const sky = new Sky();
-				sky.scale.setScalar( 300000 );
-				scene.add( sky );
-				
-				const skyUniforms = sky.material.uniforms;
-				skyUniforms[ 'turbidity' ].value = 10;
-				skyUniforms[ 'rayleigh' ].value = 2;
-				skyUniforms[ 'mieCoefficient' ].value = 0.005;
-				skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+			water = new Water(
+				waterGeometry,
+				{
+					textureWidth: 512,
+					textureHeight: 512,
+					waterNormals: new THREE.TextureLoader().load('images/waternormals.jpg', function (texture) {
 
-				const parameters = {
-					oldWater: false,
-					inclination: 0.22,
-					azimuth: 0.1
-				};
-				
-				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+						texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
 
-				function updateSun() {
-
-					const theta = Math.PI * ( parameters.inclination - 0.5 );
-					const phi = 2 * Math.PI * ( parameters.azimuth - 0.5 );
-
-					sun.x = Math.cos( phi );
-					sun.y = Math.sin( phi ) * Math.sin( theta );
-					sun.z = Math.sin( phi ) * Math.cos( theta );
-
-					sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
-					water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
-
-					scene.environment = pmremGenerator.fromScene( sky ).texture;
-
+					}),
+					alpha: 0.90,
+					sunDirection: new THREE.Vector3(),
+					sunColor: 0xffffff,
+					waterColor: 0x001e0f,
+					distortionScale: 3.7,
+					fog: scene.fog !== undefined
 				}
-				
-				function toggleWater() {
+			);
+			water.material.transparent = true;
+			water.rotation.x = - Math.PI / 2;
+			scene.add(water);
 
-					if (parameters.oldWater){
-						water.visible=false;
-						oldWater.visible=true;
-					}else{
-						water.visible=true;
-						oldWater.visible=false;
-					}
-				}
+			sun = new THREE.Vector3();
 
-				updateSun();
+			const sky = new Sky();
+			sky.scale.setScalar(300000);
+			scene.add(sky);
 
-				// controls
+			const skyUniforms = sky.material.uniforms;
+			skyUniforms['turbidity'].value = 10;
+			skyUniforms['rayleigh'].value = 2;
+			skyUniforms['mieCoefficient'].value = 0.005;
+			skyUniforms['mieDirectionalG'].value = 0.8;
 
-				controls = new MapControls( camera, renderer.domElement );
+			const parameters = {
+				oldWater: false,
+				inclination: 0.22,
+				azimuth: 0.1
+			};
 
-				//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+			const pmremGenerator = new THREE.PMREMGenerator(renderer);
 
-				controls.enableDamping = false; // an animation loop is required when either damping or auto-rotation are enabled
-				controls.dampingFactor = 0.05;
+			function updateSun() {
 
-				controls.screenSpacePanning = false;
+				const theta = Math.PI * (parameters.inclination - 0.5);
+				const phi = 2 * Math.PI * (parameters.azimuth - 0.5);
 
-				controls.minDistance = 50;
-				controls.maxDistance = MAX_DIST;
+				sun.x = Math.cos(phi);
+				sun.y = Math.sin(phi) * Math.sin(theta);
+				sun.z = Math.sin(phi) * Math.cos(theta);
 
-				controls.maxPolarAngle = Math.PI / 2;
-				
-				// camera.position.set( 20000, 100000, -30000 );
-				// controls.target.copy(new THREE.Vector3(20000, 0, -30000));
+				sky.material.uniforms['sunPosition'].value.copy(sun);
+				water.material.uniforms['sunDirection'].value.copy(sun).normalize();
 
-				camera.position.set( 0, 100000, 0 );
-				controls.target.copy(new THREE.Vector3(0, 0, 0));
-
-				// world
-				
-				// texture used to generate "bumpiness"
-				
-				// magnitude of normal displacement
-				
-				
-				uniformsTemplate = buildTemplateUniforms();
-				
-				const wireframeMaterial = new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true, transparent: true } );
-
-				grid0 = buildLayer(1,1, 0.1, 0);
-				group0 = groupGridDef(grid0, true);
-				group0.visible = true;
-				scene.add(group0);
-
-				grid1 = buildLayer(2,2, 0.2, 1);
-				group1 = groupGrid(grid1);
-				group1.visible = true;
-				scene.add(group1);
-				
-				grid2 = buildLayer(4,4, 0.4, 2);
-				group2 = groupGrid(grid2);
-				group2.visible = true;
-				scene.add(group2);
-
-				grid3 = buildLayer(8,8, 0.6, 3);
-				group3 = groupGrid(grid3);
-				group3.visible = true;
-				scene.add(group3);
-
-				grid4 = buildLayer(16,16, 0.8, 4);
-				group4 = groupGrid(grid4);
-				group4.visible = true;
-				scene.add(group4);
-
-				grid5 = buildLayer(32,32, 1.0, 50);
-				group5 = groupGrid(grid5);
-				group5.visible = true;
-				scene.add(group5);
-
-				// group = group0;
-				groups = [group1, group2, group3, group4, group5];
-				
-				var oldWaterGeo = new THREE.PlaneGeometry( SCENE_WIDTH, SCENE_HEIGHT, 1, 1 );
-				var oldWaterTex = new THREE.ImageUtils.loadTexture( 'images/water512.jpg' );
-				oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping; 
-				oldWaterTex.repeat.set(5,5);
-				
-				// var waterMat = new THREE.MeshBasicMaterial( {map: bumpTexture, transparent:false, opacity:1.0 ,depthWrite: true} );
-				var oldWaterMat = new THREE.MeshBasicMaterial( {map: oldWaterTex, transparent:true, opacity:0.4} );
-				oldWater = new THREE.Mesh(	oldWaterGeo, oldWaterMat );
-				oldWater.rotation.x = -Math.PI / 2;
-				oldWater.position.y = 0;
-				oldWater.renderOrder = 20;
-				oldWater.visible = parameters.oldWater;
-				scene.add( oldWater );
-
-				// lights
-
-				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
-				dirLight1.position.set( 1, 1, 1 );
-				//scene.add( dirLight1 );
-
-				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
-				dirLight2.position.set( - 1, - 1, - 1 );
-				//scene.add( dirLight2 );
-
-				const ambientLight = new THREE.AmbientLight( 0x222222 );
-				//scene.add( ambientLight );
-
-				//
-
-				window.addEventListener( 'resize', onWindowResize );
-				var options = {
-					zoomIn: function() {
-						controls.scale=0.95;
-					},
-					zoomOut: function() {
-						controls.scale=1.05;
-					},
-					go2d:function(){
-						camera.position.x =controls.target.x;
-						camera.position.z =controls.target.z;
-					},
-					hide:function(){
-						group.visible=false;
-					},
-					show:function(){
-						group.visible=true;
-					}
-				};
-
-				const gui = new GUI();
-				gui.add( controls, 'screenSpacePanning' );
-				gui.add( controls.pSphere, 'radius',0,MAX_DIST ).onChange(render).listen();
-				gui.add( camera.position, 'y',0,MAX_DIST,1000 ).onChange(render).listen();
-				//gui.add( controls, 'scale',0.95, 1.05,0.1 ).onChange(render).listen();
-				gui.add( options, 'zoomIn');
-				gui.add( options, 'zoomOut');
-				gui.add( options, 'go2d');
-				gui.add( options, 'hide');
-				gui.add( options, 'show');
-				
-				const folderLayer = gui.addFolder( 'Layers' );
-				folderLayer.add( parameters, 'inclination', 0, 0.5, 0.0001 );
-				folderLayer.add( parameters, 'azimuth', 0, 1, 0.0001 );
-				folderLayer.open();
-				
-
-				const folderSky = gui.addFolder( 'Sky' );
-				folderSky.add( group0, 'visible').name( 'Layer0' );
-				folderSky.add( group1, 'visible').name( 'Layer1' );
-				folderSky.add( group2, 'visible').name( 'Layer2' );
-				folderSky.add( group3, 'visible').name( 'Layer3' );
-				folderSky.add( group4, 'visible').name( 'Layer4' );
-				folderSky.add( group5, 'visible').name( 'Layer5' );
-				folderSky.open();
-
-				const waterUniforms = water.material.uniforms;
-
-				const folderWater = gui.addFolder( 'Water' );
-				folderWater.add( parameters, 'oldWater' ).name( 'Toggle water' ).onChange(toggleWater);
-				folderWater.add( waterUniforms.distortionScale, 'value', 0, 8, 0.1 ).name( 'distortionScale' );
-				folderWater.add( waterUniforms.size, 'value', 0.1, 10, 0.1 ).name( 'size' );
-				folderWater.add( waterUniforms.alpha, 'value', 0.85, 1, .01 ).name( 'alpha' );
-				folderWater.open();
+				scene.environment = pmremGenerator.fromScene(sky).texture;
 
 			}
 
-			function buildTemplateUniforms(){
-				var bumpTexture = new THREE.ImageUtils.loadTexture( 'images/marmara_gray3.png' );
-				bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping; 
+			function toggleWater() {
 
-				var oceanTexture = new THREE.ImageUtils.loadTexture( 'images/dirt-512.jpg' );
-				oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping; 
-				
-				var sandyTexture = new THREE.ImageUtils.loadTexture( 'images/dirt.jpg' );
-				sandyTexture.wrapS = sandyTexture.wrapT = THREE.RepeatWrapping; 
-				
-				var grassTexture = new THREE.ImageUtils.loadTexture( 'images/grass-512.jpg' );
-				grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping; 
-				
-				var grass2Texture = new THREE.ImageUtils.loadTexture( 'images/grass-512-2.jpg' );
-				grass2Texture.wrapS = grass2Texture.wrapT = THREE.RepeatWrapping; 
-				
-				var rockyTexture = new THREE.ImageUtils.loadTexture( 'images/rock-512.jpg' );
-				rockyTexture.wrapS = rockyTexture.wrapT = THREE.RepeatWrapping; 
-				
-				var snowyTexture = new THREE.ImageUtils.loadTexture( 'images/snow-512.jpg' );
-				snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
-			
-				var uniforms = {
-					bumpTexture:	{ type: "t", value: bumpTexture },
-					bumpScale:	    { type: "f", value: BUMP_SCALE },
-					oceanTexture:	{ type: "t", value: oceanTexture },
-					sandyTexture:	{ type: "t", value: sandyTexture },
-					grassTexture:	{ type: "t", value: grassTexture },
-					grass2Texture:	{ type: "t", value: grass2Texture },
-					rockyTexture:	{ type: "t", value: rockyTexture },
-					snowyTexture:	{ type: "t", value: snowyTexture },
-				};
-
-				return uniforms;
+				if (parameters.oldWater) {
+					water.visible = false;
+					oldWater.visible = true;
+				} else {
+					water.visible = true;
+					oldWater.visible = false;
+				}
 			}
 
-			function buildCustomMaterial(uvOffset, nU, nV){
+			updateSun();
 
-					// use "this." to create global object
-				//uniforms = new Map(uniformsTemplate);
-				var uniforms = Object.assign({}, uniformsTemplate);
-				uniforms['tUV']={ value: uvOffset };
-				uniforms['nU']={ value: nU };
-				uniforms['nV']={ value: nV };
-				
-				
-				var customMaterial = new THREE.ShaderMaterial( 
+			// controls
+
+			controls = new MapControls(camera, renderer.domElement);
+
+			//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+
+			controls.enableDamping = false; // an animation loop is required when either damping or auto-rotation are enabled
+			controls.dampingFactor = 0.05;
+
+			controls.screenSpacePanning = false;
+
+			controls.minDistance = 50;
+			controls.maxDistance = MAX_DIST;
+
+			controls.maxPolarAngle = Math.PI / 2;
+
+			camera.position.set(0, 100000, 0);
+			controls.target.copy(new THREE.Vector3(0, 0, 0));
+
+			uniformsTemplate = buildTemplateUniforms();
+
+			const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, transparent: true });
+
+			// buildGrid();
+			rootTile = new ATile(2, -SCENE_WIDTH / 2, SCENE_HEIGHT / 2, SCENE_HEIGHT, SCENE_WIDTH, 0.0, null);
+			buildGridRec(rootTile);
+
+			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
+			var oldWaterTex = new THREE.ImageUtils.loadTexture('images/water512.jpg');
+			oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping;
+			oldWaterTex.repeat.set(5, 5);
+
+			// var waterMat = new THREE.MeshBasicMaterial( {map: bumpTexture, transparent:false, opacity:1.0 ,depthWrite: true} );
+			var oldWaterMat = new THREE.MeshBasicMaterial({ map: oldWaterTex, transparent: true, opacity: 0.4 });
+			oldWater = new THREE.Mesh(oldWaterGeo, oldWaterMat);
+			oldWater.rotation.x = -Math.PI / 2;
+			oldWater.position.y = 0;
+			oldWater.renderOrder = 20;
+			oldWater.visible = parameters.oldWater;
+			scene.add(oldWater);
+
+			// lights
+
+			const dirLight1 = new THREE.DirectionalLight(0xffffff);
+			dirLight1.position.set(1, 1, 1);
+			//scene.add( dirLight1 );
+
+			const dirLight2 = new THREE.DirectionalLight(0x002288);
+			dirLight2.position.set(- 1, - 1, - 1);
+			//scene.add( dirLight2 );
+
+			const ambientLight = new THREE.AmbientLight(0x222222);
+			//scene.add( ambientLight );
+
+			//
+
+			window.addEventListener('resize', onWindowResize);
+			var options = {
+				zoomIn: function () {
+					controls.scale = 0.95;
+				},
+				zoomOut: function () {
+					controls.scale = 1.05;
+				},
+				go2d: function () {
+					camera.position.x = controls.target.x;
+					camera.position.z = controls.target.z;
+				},
+				hide: function () {
+					group.visible = false;
+				},
+				show: function () {
+					group.visible = true;
+				}
+			};
+
+			const gui = new GUI();
+			gui.add(controls, 'screenSpacePanning');
+			gui.add(controls.pSphere, 'radius', 0, MAX_DIST).onChange(render).listen();
+			gui.add(camera.position, 'y', 0, MAX_DIST, 1000).onChange(render).listen();
+			//gui.add( controls, 'scale',0.95, 1.05,0.1 ).onChange(render).listen();
+			gui.add(options, 'zoomIn');
+			gui.add(options, 'zoomOut');
+			gui.add(options, 'go2d');
+			gui.add(options, 'hide');
+			gui.add(options, 'show');
+
+			const folderLayer = gui.addFolder('Layers');
+			folderLayer.add(parameters, 'inclination', 0, 0.5, 0.0001);
+			folderLayer.add(parameters, 'azimuth', 0, 1, 0.0001);
+			folderLayer.open();
+
+			const waterUniforms = water.material.uniforms;
+
+			const folderWater = gui.addFolder('Water');
+			folderWater.add(parameters, 'oldWater').name('Toggle water').onChange(toggleWater);
+			folderWater.add(waterUniforms.distortionScale, 'value', 0, 8, 0.1).name('distortionScale');
+			folderWater.add(waterUniforms.size, 'value', 0.1, 10, 0.1).name('size');
+			folderWater.add(waterUniforms.alpha, 'value', 0.85, 1, .01).name('alpha');
+			folderWater.open();
+
+		}
+
+		function buildTemplateUniforms() {
+			var bumpTexture = new THREE.ImageUtils.loadTexture('images/marmara_gray3.png');
+			bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
+
+			var oceanTexture = new THREE.ImageUtils.loadTexture('images/dirt-512.jpg');
+			oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping;
+
+			var sandyTexture = new THREE.ImageUtils.loadTexture('images/dirt.jpg');
+			sandyTexture.wrapS = sandyTexture.wrapT = THREE.RepeatWrapping;
+
+			var grassTexture = new THREE.ImageUtils.loadTexture('images/grass-512.jpg');
+			grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+
+			var grass2Texture = new THREE.ImageUtils.loadTexture('images/grass-512-2.jpg');
+			grass2Texture.wrapS = grass2Texture.wrapT = THREE.RepeatWrapping;
+
+			var rockyTexture = new THREE.ImageUtils.loadTexture('images/rock-512.jpg');
+			rockyTexture.wrapS = rockyTexture.wrapT = THREE.RepeatWrapping;
+
+			var snowyTexture = new THREE.ImageUtils.loadTexture('images/snow-512.jpg');
+			snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
+
+			var uniforms = {
+				bumpTexture: { type: "t", value: bumpTexture },
+				bumpScale: { type: "f", value: BUMP_SCALE },
+				oceanTexture: { type: "t", value: oceanTexture },
+				sandyTexture: { type: "t", value: sandyTexture },
+				grassTexture: { type: "t", value: grassTexture },
+				grass2Texture: { type: "t", value: grass2Texture },
+				rockyTexture: { type: "t", value: rockyTexture },
+				snowyTexture: { type: "t", value: snowyTexture },
+			};
+
+			return uniforms;
+		}
+
+		function buildCustomMaterial(uvOffset, nU, nV) {
+
+			// use "this." to create global object
+			//uniforms = new Map(uniformsTemplate);
+			var uniforms = Object.assign({}, uniformsTemplate);
+			uniforms['tUV'] = { value: uvOffset };
+			uniforms['nU'] = { value: nU };
+			uniforms['nV'] = { value: nV };
+
+
+			var customMaterial = new THREE.ShaderMaterial(
 				{
 					uniforms: uniforms,
-					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
-					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
-				}   
-				);
-
-				return customMaterial;
-
-			}
-
-			function buildLayer(nHorizontal, nVertical, scale, renderOrder){
-				// const group = new THREE.Group();
-				const gridPlaneWidth = SCENE_WIDTH/nHorizontal;
-				const gridPlaneHeight = SCENE_HEIGHT/nVertical;
-				const gridPlanePxWidth = PX_WIDTH/nHorizontal;
-				const gridPlanePxHeight = PX_HEIGHT/nVertical;
-				const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth ,gridPlaneHeight , gridPlanePxWidth*scale, gridPlanePxHeight*scale );
-
-				const grid = [];
-				for (let i = 0; i < nHorizontal; i++) {
-					const hGrid = [];
-					grid[i]=hGrid;
-					for (let j = 0; j < nVertical; j++) {
-						
-						var planeGrid = new THREE.Mesh(	gridPlaneGeometry, buildCustomMaterial(new THREE.Vector2(i/nHorizontal,j/nVertical), nHorizontal, nVertical) );
-
-						planeGrid.rotation.x = -Math.PI / 2;
-						planeGrid.position.x =  (i-(nHorizontal/2)+0.5)*gridPlaneWidth;
-						planeGrid.position.z =  ((nVertical/2)-j-0.5)*gridPlaneHeight;
-						planeGrid.position.y =  -2280;
-						planeGrid.renderOrder = renderOrder;
-						// console.log('pos %o', planeGrid.position)
-						// group.add(planeGrid);
-						hGrid[nVertical-1-j]=planeGrid;
-					}
+					vertexShader: document.getElementById('vertexShader').textContent,
+					fragmentShader: document.getElementById('fragmentShader').textContent
 				}
+			);
 
-				return grid;
-			}
-			
-			function groupGrid(grid){
-				return groupGridDef(grid, false);
-			}
+			return customMaterial;
 
-			function groupGridDef(grid, defaultVisibility){
-				const grp = new THREE.Group();
-
-				for (let i = 0; i < grid.length; i++) {
-					for (let j = 0; j < grid[0].length; j++) {
-						const tile = grid[i][j];
-						tile.visible=defaultVisibility;
-					
-						grp.add(tile);
-					}
-				}
-
-				return grp;
-			}
-
-			function onWindowResize() {
-
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
-			}
-
-			function animate() {
-
-				requestAnimationFrame( animate );
-
-				controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
-				render();
-
-				stats.update();
-			}
-
-			function render() {
-				const time = performance.now() * 0.001;
-				water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
-				
-				if (!lastPost.equals(camera.position)){
-					visibleTiles.forEach(tile => tile.visible=false);
-					visibleTiles = [];
-
-					
-					if(camera.position.y < 80_000){			
-						visibleTiles.push(findVisible(grid1));
-					}
-
-					if(camera.position.y < 64_000){			
-						visibleTiles.push(findVisible(grid2));
-					}
-
-					if(camera.position.y < 48_000){			
-						visibleTiles.push(findVisible(grid3));
-					}
-
-					if(camera.position.y < 32_000){			
-						visibleTiles.push(findVisible(grid4));
-					}
-					
-					if(camera.position.y < 16_000){			
-						visibleTiles.push(findVisible(grid5));
-					}
-
-
-					visibleTiles.forEach(tile => tile.visible=true);
-					lastPost = new THREE.Vector3(camera.position);
-				}
-				
-				renderer.render( scene, camera );
-				
 		}
 
-		function findVisible(grid){
-			const rHorizontal = (camera.position.x+SCENE_WIDTH/2)/SCENE_WIDTH;
-			const rVertical = (camera.position.z+SCENE_HEIGHT/2)/SCENE_HEIGHT;
+		function onWindowResize() {
 
-			const nHor = grid.length;
-			const nVer = grid[0].length;
-			const nHorIdx = Math.max(0, Math.min(Math.floor(nHor*rHorizontal), nHor-1));
-			const nVerIdx = Math.max(0, Math.min(Math.floor(nVer*rVertical), nVer-1));
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
 
-			const tile  = grid[nHorIdx][nVerIdx];
-			if (tile === undefined){
-				console.log('Undefined tile for %s %s of camera %s %s', nHorIdx, nVerIdx, camera.position.x, camera.position.z);	
-			}
-			return tile;
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
 		}
 
-		</script>
+		function animate() {
 
-	</body>
+			requestAnimationFrame(animate);
+
+			controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+			render();
+
+			stats.update();
+		}
+
+		function render() {
+			const time = performance.now() * 0.001;
+			water.material.uniforms['time'].value += 1.0 / 60.0;
+
+			renderer.render(scene, camera);
+
+		}
+
+		function buildGridRec(tile) {
+			if (tile.depth < 0) return;
+
+			const halfHeight = tile.height / 2;
+			const halfWidth = tile.width / 2;
+
+			const nHorizontal = 2 * SCENE_WIDTH / tile.width;
+			const nVertical = 2 * SCENE_HEIGHT / tile.height;
+
+			const i = Math.floor((nHorizontal * (tile.left + SCENE_WIDTH / 2)) / SCENE_WIDTH);
+			const j = Math.floor((nVertical * (SCENE_HEIGHT / 2 - tile.top)) / SCENE_HEIGHT);
+			console.log("Tile left=%s,top=%s width=%s,height=%s, depth=%s i=%s,j=%s ", tile.left, tile.top, tile.width, tile.height, tile.depth, i, j);
+
+			const scale = tile.scale + 0.2;
+
+			const tile00 = new ATile(tile.depth - 1, tile.left, tile.top, halfHeight, halfWidth, scale, layerTile(i, j, nHorizontal, nVertical, scale));
+			const tile01 = new ATile(tile.depth - 1, tile.left + halfWidth, tile.top, halfHeight, halfWidth, scale, layerTile(i, j + 1, nHorizontal, nVertical, scale));
+			const tile10 = new ATile(tile.depth - 1, tile.left, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j, nHorizontal, nVertical, scale));
+			const tile11 = new ATile(tile.depth - 1, tile.left + halfWidth, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j + 1, nHorizontal, nVertical, scale));
+
+			buildGridRec(tile00);
+			buildGridRec(tile01);
+			buildGridRec(tile10);
+			buildGridRec(tile11);
+
+			const grp = new THREE.Group();
+			grp.add(tile00.plane);
+			grp.add(tile01.plane);
+			grp.add(tile10.plane);
+			grp.add(tile11.plane);
+			scene.add(grp);
+
+			if (tile.depth == 2) {
+				grp.visible = true;
+			} else {
+				grp.visible = false;
+			}
+
+			tile.children = [tile00, tile01, tile10, tile11];
+		}
+
+		function layerTile(i, j, nHorizontal, nVertical, scale) {
+
+			// const group = new THREE.Group();
+			const gridPlaneWidth = SCENE_WIDTH / nHorizontal;
+			const gridPlaneHeight = SCENE_HEIGHT / nVertical;
+			const gridPlanePxWidth = PX_WIDTH / nHorizontal;
+			const gridPlanePxHeight = PX_HEIGHT / nVertical;
+
+			const scaledGridPlanePxWidth = gridPlanePxWidth * scale;
+			const scaledGridPlanePxHeight = gridPlanePxHeight * scale;
+
+			const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight);
+
+			const uvOffset = new THREE.Vector2(i / nHorizontal, j / nVertical);
+			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(uvOffset, nHorizontal, nVertical));
+
+			planeGrid.rotation.x = -Math.PI / 2;
+
+			planeGrid.position.x = (i - (nHorizontal / 2) + 0.5) * gridPlaneWidth;
+			planeGrid.position.z = ((nVertical / 2) - j - 0.5) * gridPlaneHeight;
+			planeGrid.position.y = -2280;
+
+			planeGrid.visible = true;
+
+			console.log("New tile i=%s,j=%s x=%s,z=%s nHorizontal=%s, nVertical=%s scale=%s gridPlaneWidth=%s, gridPlaneHeight=%s scaledGridPlanePxWidth=%s,scaledGridPlanePxHeight=%s uvOffset=%o",
+				i, j, planeGrid.position.x, planeGrid.position.z, nHorizontal, nVertical, scale, gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight, uvOffset);
+
+			return planeGrid;
+		}
+
+	</script>
+
+</body>
+
 </html>
