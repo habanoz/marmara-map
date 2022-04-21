@@ -520,7 +520,7 @@
 
 
 					visibleTiles.forEach(tile => tile.visible=true);
-					lastPost = new THREE.Vector3(camera.position);
+					lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 				}
 				
 				renderer.render( scene, camera );

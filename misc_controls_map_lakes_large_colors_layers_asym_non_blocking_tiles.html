@@ -106,6 +106,7 @@
 
 		let SCENE_WIDTH = 200000;
 		let SCENE_HEIGHT = 120000;
+		let VIEW_SQUARE_DIM_TILE_RATE = 1.5;
 
 		class ATile {
 			constructor(depth, left, top, height, width, scale, plane) {
@@ -441,7 +442,7 @@
 				findVisible(rootTile, zoom, 0, visibleTiles);
 
 				visibleTiles.forEach(tile => tile.plane.visible = true);
-
+				lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 			}
 
 
@@ -490,8 +491,14 @@
 			const x = camera.position.x;
 			const y = camera.position.y;
 			const z = camera.position.z;
+			
+			const viewRectWidth = VIEW_SQUARE_DIM_TILE_RATE*tile.width;
+			const viewRectHeight = VIEW_SQUARE_DIM_TILE_RATE*tile.height;
+			const viewRect = new THREE.Vector4(x-viewRectWidth/2, z+viewRectHeight/2, viewRectWidth, viewRectHeight);
+			
+			console.log("Tile=%o ViewRecf=%o", tile, viewRect);
 
-			if (tile.left <= x && x <= tile.left + tile.width && tile.top-tile.height <= z && z <= tile.top && tile.children!=null) {
+			if ( isVisibleRect(tile, viewRect) && tile.children!=null) {
 				if (zoom == level) {
 					visibleTiles.push(tile.children[0]);
 					visibleTiles.push(tile.children[1]);
@@ -504,6 +511,24 @@
 					findVisible(tile.children[3], zoom, level + 1, visibleTiles);
 				}
 			}
+		}
+
+		function isVisible(rect, x, y){
+			return rect.x <= x && x <= rect.x + rect.width && rect.y-rect.height <= y && y <= rect.y
+		}
+
+		function isVisibleRect(tile, viewRect){
+			return false ||
+			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x				, viewRect.y) || 
+			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x+viewRect.z	, viewRect.y) || 
+			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x				, viewRect.y-viewRect.w) || 
+			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x+viewRect.z	, viewRect.y-viewRect.w) ||
+			(VIEW_SQUARE_DIM_TILE_RATE >= 1 && (
+				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left				, tile.top) ||
+				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left+tile.width	, tile.top) ||
+				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left				, tile.top-tile.height) ||
+				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left+tile.width	, tile.top-tile.height) 
+			));
 		}
 
 		function layerTile(i, j, nHorizontal, nVertical, scale) {
