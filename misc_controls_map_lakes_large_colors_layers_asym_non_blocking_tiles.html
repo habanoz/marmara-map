@@ -129,6 +129,7 @@
 		let rootTile;
 		const tileGeometries = new Map();
 		const tileSprites = new Map();
+		const viewPortPlanes = new Map();
 		const maxZoom = 6;
 
 		const stats = Stats();
@@ -301,7 +302,7 @@
 				show: function () {
 					group.visible = true;
 				},
-				toggleWireframe : function(){
+				toggleWireframe: function () {
 					wireFrame = !wireFrame;
 					lastPost = new THREE.Vector3();
 				}
@@ -421,6 +422,8 @@
 			if (!lastPost.equals(camera.position)) {
 				visibleTiles.forEach(tile => tile.plane.visible = false);
 				visibleTiles.forEach(tile => tile.rect.visible = false);
+				viewPortPlanes.forEach(plane => plane.visible = false);
+
 				visibleTiles = [];
 
 				var zoom = 0;
@@ -452,7 +455,14 @@
 				findVisible(rootTile, zoom, 0, visibleTiles);
 
 				visibleTiles.forEach(tile => tile.plane.visible = true);
-				if(wireFrame) visibleTiles.forEach(tile => tile.rect.visible = true);
+				if (wireFrame) {
+					visibleTiles.forEach(tile => tile.rect.visible = true);
+					const vewPortPlane = viewPortPlanes.get(zoom);
+					vewPortPlane.position.x = camera.position.x;
+					vewPortPlane.position.z = camera.position.z;
+					vewPortPlane.visible=true;
+				}
+
 				lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 			}
 
@@ -505,6 +515,12 @@
 
 			tile.children = [tile00, tile01, tile10, tile11];
 			tile.group = grp;
+
+			if (!viewPortPlanes.has(tile.depth)) {
+				const viewPortPlane = viewRect(tile.width*VIEW_SQUARE_DIM_TILE_RATE , tile.height*VIEW_SQUARE_DIM_TILE_RATE);
+				scene.add(viewPortPlane);
+				viewPortPlanes.set(tile.depth, viewPortPlane);
+			}
 		}
 
 		function findVisible(tile, zoom, level, visibleTiles) {
@@ -565,8 +581,8 @@
 			if (!tileGeometries.has(scale)) {
 				console.log("***Geometry built for scale %s ", scale);
 				tileGeometries.set(scale, new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight));
-				tileSprites.set(scale, 
-				makeTextSprite(""+scale,{ fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000/scale,5000/scale,5000/scale))
+				tileSprites.set(scale,
+					makeTextSprite(scale.toFixed(2), { fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000 / scale, 5000 / scale, 5000 / scale))
 				);
 			}
 
@@ -608,16 +624,32 @@
 			planeGrid.visible = false;
 
 			//planeGrid.add(makeTextSprite(""+scale,{ fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000/scale,5000/scale,5000/scale)));
-			
+
 			const spriteMaterial = tileSprites.get(scale);
 			var sprite = new THREE.Sprite(spriteMaterial);
-			sprite.scale.set(5000/scale,5000/scale,5000/scale);
+			sprite.scale.set(5000 / scale, 5000 / scale, 5000 / scale);
 
 			planeGrid.add(sprite);
 
 			return planeGrid;
 		}
 
+		function viewRect(gridPlaneWidth, gridPlaneHeight) {
+
+			const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight);
+			const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+			const planeGrid = new THREE.Mesh(gridPlaneGeometry, material);
+
+			planeGrid.rotation.x = -Math.PI / 2;
+
+			planeGrid.position.x = 0;
+			planeGrid.position.z = 0;
+			planeGrid.position.y = 1200;
+
+			planeGrid.visible = false;
+
+			return planeGrid;
+		}
 
 		function makeTextSprite(message, parameters, textScale) {
 			if (parameters === undefined) parameters = {};
@@ -667,7 +699,7 @@
 			texture.needsUpdate = true;
 
 			var spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-			
+
 
 			return spriteMaterial;
 		}
