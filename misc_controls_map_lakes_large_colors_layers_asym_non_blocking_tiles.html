@@ -98,6 +98,7 @@
 		let lastPost = new THREE.Vector3();
 		let visibleTiles = [];
 		let uniformsTemplate;
+		let wireFrame = false;
 
 		let MAX_DIST = 100_000;
 		let BUMP_SCALE = 5000.0;
@@ -106,7 +107,7 @@
 
 		let SCENE_WIDTH = 200000;
 		let SCENE_HEIGHT = 120000;
-		let VIEW_SQUARE_DIM_TILE_RATE = 1.5;
+		let VIEW_SQUARE_DIM_TILE_RATE = 0.4;
 
 		class ATile {
 			constructor(depth, left, top, height, width, scale, plane) {
@@ -118,13 +119,16 @@
 				this.scale = scale;
 
 				this.plane = plane;
+				this.rect = null;
 
 				this.children = null;
+				this.group = null;
 			}
 		}
 
 		let rootTile;
 		const tileGeometries = new Map();
+		const tileSprites = new Map();
 		const maxZoom = 6;
 
 		const stats = Stats();
@@ -280,7 +284,7 @@
 			//
 
 			window.addEventListener('resize', onWindowResize);
-			var options = {
+			const options = {
 				zoomIn: function () {
 					controls.scale = 0.95;
 				},
@@ -296,6 +300,10 @@
 				},
 				show: function () {
 					group.visible = true;
+				},
+				toggleWireframe : function(){
+					wireFrame = !wireFrame;
+					lastPost = new THREE.Vector3();
 				}
 			};
 
@@ -309,6 +317,7 @@
 			gui.add(options, 'go2d');
 			gui.add(options, 'hide');
 			gui.add(options, 'show');
+			gui.add(options, 'toggleWireframe');
 
 			const folderLayer = gui.addFolder('Layers');
 			folderLayer.add(parameters, 'inclination', 0, 0.5, 0.0001);
@@ -411,6 +420,7 @@
 
 			if (!lastPost.equals(camera.position)) {
 				visibleTiles.forEach(tile => tile.plane.visible = false);
+				visibleTiles.forEach(tile => tile.rect.visible = false);
 				visibleTiles = [];
 
 				var zoom = 0;
@@ -442,11 +452,9 @@
 				findVisible(rootTile, zoom, 0, visibleTiles);
 
 				visibleTiles.forEach(tile => tile.plane.visible = true);
+				if(wireFrame) visibleTiles.forEach(tile => tile.rect.visible = true);
 				lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 			}
-
-
-
 
 			renderer.render(scene, camera);
 
@@ -477,28 +485,40 @@
 			buildGridRec(tile10);
 			buildGridRec(tile11);
 
+			tile00.rect = layerRect(i, j, nHorizontal, nVertical, scale);
+			tile01.rect = layerRect(i, j + 1, nHorizontal, nVertical, scale);
+			tile10.rect = layerRect(i + 1, j, nHorizontal, nVertical, scale);
+			tile11.rect = layerRect(i + 1, j + 1, nHorizontal, nVertical, scale);
+
 			const grp = new THREE.Group();
 			grp.add(tile00.plane);
 			grp.add(tile01.plane);
 			grp.add(tile10.plane);
 			grp.add(tile11.plane);
+
+			grp.add(tile00.rect);
+			grp.add(tile01.rect);
+			grp.add(tile10.rect);
+			grp.add(tile11.rect);
+
 			scene.add(grp);
 
 			tile.children = [tile00, tile01, tile10, tile11];
+			tile.group = grp;
 		}
 
 		function findVisible(tile, zoom, level, visibleTiles) {
 			const x = camera.position.x;
 			const y = camera.position.y;
 			const z = camera.position.z;
-			
-			const viewRectWidth = VIEW_SQUARE_DIM_TILE_RATE*tile.width;
-			const viewRectHeight = VIEW_SQUARE_DIM_TILE_RATE*tile.height;
-			const viewRect = new THREE.Vector4(x-viewRectWidth/2, z+viewRectHeight/2, viewRectWidth, viewRectHeight);
-			
-			console.log("Tile=%o ViewRecf=%o", tile, viewRect);
 
-			if ( isVisibleRect(tile, viewRect) && tile.children!=null) {
+			const viewRectWidth = VIEW_SQUARE_DIM_TILE_RATE * tile.width;
+			const viewRectHeight = VIEW_SQUARE_DIM_TILE_RATE * tile.height;
+			const viewRect = new THREE.Vector4(x - viewRectWidth / 2, z + viewRectHeight / 2, viewRectWidth, viewRectHeight);
+
+			//console.log("Tile=%o ViewRecf=%o", tile, viewRect);
+
+			if (isVisibleRect(tile, viewRect) && tile.children != null) {
 				if (zoom == level) {
 					visibleTiles.push(tile.children[0]);
 					visibleTiles.push(tile.children[1]);
@@ -513,22 +533,22 @@
 			}
 		}
 
-		function isVisible(rect, x, y){
-			return rect.x <= x && x <= rect.x + rect.width && rect.y-rect.height <= y && y <= rect.y
+		function isVisible(rect, x, y) {
+			return rect.x <= x && x <= rect.x + rect.width && rect.y - rect.height <= y && y <= rect.y
 		}
 
-		function isVisibleRect(tile, viewRect){
+		function isVisibleRect(tile, viewRect) {
 			return false ||
-			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x				, viewRect.y) || 
-			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x+viewRect.z	, viewRect.y) || 
-			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x				, viewRect.y-viewRect.w) || 
-			isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x+viewRect.z	, viewRect.y-viewRect.w) ||
-			(VIEW_SQUARE_DIM_TILE_RATE >= 1 && (
-				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left				, tile.top) ||
-				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left+tile.width	, tile.top) ||
-				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left				, tile.top-tile.height) ||
-				isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left+tile.width	, tile.top-tile.height) 
-			));
+				isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x, viewRect.y) ||
+				isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x + viewRect.z, viewRect.y) ||
+				isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x, viewRect.y - viewRect.w) ||
+				isVisible(new THREE.Vector4(tile.left, tile.top, tile.width, tile.height), viewRect.x + viewRect.z, viewRect.y - viewRect.w) ||
+				(VIEW_SQUARE_DIM_TILE_RATE >= 1 && (
+					isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left, tile.top) ||
+					isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left + tile.width, tile.top) ||
+					isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left, tile.top - tile.height) ||
+					isVisible(new THREE.Vector4(viewRect.x, viewRect.y, viewRect.width, viewRect.height), tile.left + tile.width, tile.top - tile.height)
+				));
 		}
 
 		function layerTile(i, j, nHorizontal, nVertical, scale) {
@@ -545,6 +565,9 @@
 			if (!tileGeometries.has(scale)) {
 				console.log("***Geometry built for scale %s ", scale);
 				tileGeometries.set(scale, new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight));
+				tileSprites.set(scale, 
+				makeTextSprite(""+scale,{ fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000/scale,5000/scale,5000/scale))
+				);
 			}
 
 			const gridPlaneGeometry = tileGeometries.get(scale);
@@ -564,6 +587,89 @@
 				i, j, planeGrid.position.x, planeGrid.position.z, nHorizontal, nVertical, scale, gridPlaneWidth, gridPlaneHeight, scaledGridPlanePxWidth, scaledGridPlanePxHeight, uvOffset);
 
 			return planeGrid;
+		}
+
+		function layerRect(i, j, nHorizontal, nVertical, scale) {
+
+			// const group = new THREE.Group();
+			const gridPlaneWidth = SCENE_WIDTH / nHorizontal;
+			const gridPlaneHeight = SCENE_HEIGHT / nVertical;
+
+			const gridPlaneGeometry = new THREE.PlaneGeometry(gridPlaneWidth, gridPlaneHeight);
+			const material = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true });
+			const planeGrid = new THREE.Mesh(gridPlaneGeometry, material);
+
+			planeGrid.rotation.x = -Math.PI / 2;
+
+			planeGrid.position.x = (i - (nHorizontal / 2) + 0.5) * gridPlaneWidth;
+			planeGrid.position.z = ((nVertical / 2) - j - 0.5) * gridPlaneHeight;
+			planeGrid.position.y = 1000;
+
+			planeGrid.visible = false;
+
+			//planeGrid.add(makeTextSprite(""+scale,{ fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000/scale,5000/scale,5000/scale)));
+			
+			const spriteMaterial = tileSprites.get(scale);
+			var sprite = new THREE.Sprite(spriteMaterial);
+			sprite.scale.set(5000/scale,5000/scale,5000/scale);
+
+			planeGrid.add(sprite);
+
+			return planeGrid;
+		}
+
+
+		function makeTextSprite(message, parameters, textScale) {
+			if (parameters === undefined) parameters = {};
+
+			var fontface = parameters.hasOwnProperty("fontface") ?
+				parameters["fontface"] : "Arial";
+
+			var fontsize = parameters.hasOwnProperty("fontsize") ?
+				parameters["fontsize"] : 18;
+
+			var borderThickness = parameters.hasOwnProperty("borderThickness") ?
+				parameters["borderThickness"] : 4;
+
+			var borderColor = parameters.hasOwnProperty("borderColor") ?
+				parameters["borderColor"] : { r: 0, g: 0, b: 0, a: 1.0 };
+
+			var backgroundColor = parameters.hasOwnProperty("backgroundColor") ?
+				parameters["backgroundColor"] : { r: 255, g: 255, b: 255, a: 1.0 };
+
+
+			var canvas = document.createElement('canvas');
+			var context = canvas.getContext('2d');
+			context.font = "Bold " + fontsize + "px " + fontface;
+
+			// get size data (height depends only on font size)
+			var metrics = context.measureText(message);
+			var textWidth = metrics.width;
+
+			// background color
+			context.fillStyle = "rgba(" + backgroundColor.r + "," + backgroundColor.g + ","
+				+ backgroundColor.b + "," + backgroundColor.a + ")";
+			// border color
+			context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + ","
+				+ borderColor.b + "," + borderColor.a + ")";
+
+			context.lineWidth = borderThickness;
+			// roundRect(context, borderThickness / 2, borderThickness / 2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
+			// 1.4 is extra height factor for text below baseline: g,j,p,q.
+
+			// text color
+			context.fillStyle = "rgba(0, 0, 0, 1.0)";
+
+			context.fillText(message, borderThickness, fontsize + borderThickness);
+
+			// canvas contents will be used for a texture
+			var texture = new THREE.Texture(canvas)
+			texture.needsUpdate = true;
+
+			var spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+			
+
+			return spriteMaterial;
 		}
 
 	</script>

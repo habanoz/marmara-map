@@ -1,8 +1,8 @@
-import {
+		import {
 	Matrix4,
 	Object3D,
 	Vector3
-} from '../../../build/three.module.js';
+} from '../../threejs/three.module.js';
 
 var CSS2DObject = function ( element ) {
 
