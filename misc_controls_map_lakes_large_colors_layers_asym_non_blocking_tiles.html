@@ -458,8 +458,8 @@
 				if (wireFrame) {
 					visibleTiles.forEach(tile => tile.rect.visible = true);
 					const vewPortPlane = viewPortPlanes.get(zoom);
-					vewPortPlane.position.x = camera.position.x;
-					vewPortPlane.position.z = camera.position.z;
+					vewPortPlane.position.x = controls.target.x;
+					vewPortPlane.position.z = controls.target.z;
 					vewPortPlane.visible=true;
 				}
 
@@ -530,7 +530,7 @@
 
 			const viewRectWidth = VIEW_SQUARE_DIM_TILE_RATE * tile.width;
 			const viewRectHeight = VIEW_SQUARE_DIM_TILE_RATE * tile.height;
-			const viewRect = new THREE.Vector4(x - viewRectWidth / 2, z + viewRectHeight / 2, viewRectWidth, viewRectHeight);
+			const viewRect = new THREE.Vector4(controls.target.x - viewRectWidth / 2, controls.target.z + viewRectHeight / 2, viewRectWidth, viewRectHeight);
 
 			//console.log("Tile=%o ViewRecf=%o", tile, viewRect);
 
