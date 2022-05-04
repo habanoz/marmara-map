@@ -107,7 +107,6 @@
 
 		let SCENE_WIDTH = 200000;
 		let SCENE_HEIGHT = 120000;
-		let PLANE_Y = -2280;
 
 		class ATile {
 			constructor(depth, left, top, height, width, scale, plane) {
@@ -254,7 +253,7 @@
 			const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, transparent: true });
 
 			// buildGrid();
-			rootTile = new ATile(0, -SCENE_WIDTH / 2, -SCENE_HEIGHT / 2, SCENE_HEIGHT, SCENE_WIDTH, 0.0, null);
+			rootTile = new ATile(0, -SCENE_WIDTH / 2, SCENE_HEIGHT / 2, SCENE_HEIGHT, SCENE_WIDTH, 0.0, null);
 			buildGridRec(rootTile);
 
 			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
@@ -340,9 +339,6 @@
 
 			vewPortPlane = getViewRect(1, 1);
 			scene.add(vewPortPlane);
-
-			const axesHelper = new THREE.AxesHelper(500);
-			scene.add(axesHelper);
 		}
 
 		function buildTemplateUniforms() {
@@ -430,31 +426,31 @@
 				visibleTiles.forEach(tile => tile.plane.visible = false);
 				visibleTiles.forEach(tile => tile.rect.visible = false);
 
-				console.log("1-render start ****");
 				visibleTiles = [];
 
-				const topLeft = castToPoint(50, 50, -90_000, -55_000);
-				const bottomRight = castToPoint(window.innerWidth - 50, window.innerHeight - 50, +90_000, +55_000);
+				const zoom = distanceToZoom(camera.position.y);
 
-				console.log("2-topLeft %o", topLeft);
-				console.log("3-bottomRight %o", bottomRight);
+				const topLeft = castToPoint(50, 50, window.innerWidth / 2 - 100, window.innerHeight / 2 - 100);
+				const bottomRight = castToPoint(window.innerWidth - 50, window.innerHeight - 50, window.innerWidth / 2 + 100, window.innerHeight / 2 + 100);
 
 				viewRect = new THREE.Vector4(
 					topLeft.x,
-					topLeft.z,
+					topLeft.y,
 					bottomRight.x - topLeft.x,
-					bottomRight.z - topLeft.z);
+					topLeft.y - bottomRight.y);
 
-				console.log("4-viewRect %o", viewRect);
+				console.log("topLeft %o", topLeft);
+				console.log("bottomRight %o", bottomRight);
+				console.log("View Rect %o", viewRect);
 
-				findVisible(rootTile, distanceToZoom(distanceToTile(rootTile)), 0, visibleTiles);
+				findVisible(rootTile, zoom, 0, visibleTiles);
 
 				visibleTiles.forEach(tile => tile.plane.visible = true);
 				if (wireFrame) {
 					visibleTiles.forEach(tile => tile.rect.visible = true);
 
-					vewPortPlane.position.x = topLeft.x + viewRect.width / 2;//controls.target.x;
-					vewPortPlane.position.z = topLeft.z + viewRect.height / 2;//controls.target.z;
+					vewPortPlane.position.x = controls.target.x;
+					vewPortPlane.position.z = controls.target.z;
 					vewPortPlane.scale.x = viewRect.width;
 					vewPortPlane.scale.y = viewRect.height;
 					vewPortPlane.visible = true;
@@ -495,17 +491,8 @@
 		}
 
 		function distanceToTile(tile) {
-			if (tile == null) {
-				console.log("Tile plane null left=%s,top=%s width=%s,height=%s, depth=%s ", tile.left, tile.top, tile.width, tile.height, tile.depth);
-				return 1000000;
-			}
-
-			var pos = new THREE.Vector3(0, PLANE_Y, 0);
-			if (tile.plane != null) {
-				pos = tile.plane.position;
-			}
-
-			return camera.position.distanceTo(pos);
+			if (tile == null) return 1000000;
+			return camera.position.distanceTo(tile.plane.position);
 		}
 
 		function buildGridRec(tile) {
@@ -518,15 +505,15 @@
 			const nVertical = 2 * SCENE_HEIGHT / tile.height;
 
 			const i = Math.floor((nHorizontal * (tile.left + SCENE_WIDTH / 2)) / SCENE_WIDTH);
-			const j = Math.floor((nVertical * (tile.top + SCENE_HEIGHT / 2)) / SCENE_HEIGHT);
+			const j = Math.floor((nVertical * (SCENE_HEIGHT / 2 - tile.top)) / SCENE_HEIGHT);
 			console.log("Tile left=%s,top=%s width=%s,height=%s, depth=%s i=%s,j=%s ", tile.left, tile.top, tile.width, tile.height, tile.depth, i, j);
 
 			const scale = tile.scale + 0.2;
 
 			const tile00 = new ATile(tile.depth + 1, tile.left, tile.top, halfHeight, halfWidth, scale, layerTile(i, j, nHorizontal, nVertical, scale));
 			const tile01 = new ATile(tile.depth + 1, tile.left + halfWidth, tile.top, halfHeight, halfWidth, scale, layerTile(i, j + 1, nHorizontal, nVertical, scale));
-			const tile10 = new ATile(tile.depth + 1, tile.left, tile.top + halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j, nHorizontal, nVertical, scale));
-			const tile11 = new ATile(tile.depth + 1, tile.left + halfWidth, tile.top + halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j + 1, nHorizontal, nVertical, scale));
+			const tile10 = new ATile(tile.depth + 1, tile.left, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j, nHorizontal, nVertical, scale));
+			const tile11 = new ATile(tile.depth + 1, tile.left + halfWidth, tile.top - halfHeight, halfHeight, halfWidth, scale, layerTile(i + 1, j + 1, nHorizontal, nVertical, scale));
 
 			buildGridRec(tile00);
 			buildGridRec(tile01);
@@ -563,30 +550,22 @@
 
 			//console.log("Tile=%o ViewRecf=%o", tile, viewRect);
 
-			if (isVisibleRect(tile, viewRect)) {
-				if (tile.children == null) {
-					console.log("No children Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
-				} else if (level > zoom ) {
-					visibleTiles.push(tile);
-					console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
-				}
-				else if (zoom == level) {
-					console.log("%d-Tile=%o ViewRecf=%o zoom=%s level=%s", visibleTiles.length / 4, tile, viewRect, zoom, level);
-
+			if (isVisibleRect(tile, viewRect) && tile.children != null) {
+				if (zoom == level) {
 					visibleTiles.push(tile.children[0]);
 					visibleTiles.push(tile.children[1]);
 					visibleTiles.push(tile.children[2]);
 					visibleTiles.push(tile.children[3]);
 				} else {
-					findVisible(tile.children[0], distanceToZoom(distanceToTile(tile.children[0])), level + 1, visibleTiles);
-					findVisible(tile.children[1], distanceToZoom(distanceToTile(tile.children[1])), level + 1, visibleTiles);
-					findVisible(tile.children[2], distanceToZoom(distanceToTile(tile.children[2])), level + 1, visibleTiles);
-					findVisible(tile.children[3], distanceToZoom(distanceToTile(tile.children[3])), level + 1, visibleTiles);
+					// findVisible(tile.children[0], distanceToZoom(distanceToTile(tile.children[0])), level + 1, visibleTiles);
+					// findVisible(tile.children[1], distanceToZoom(distanceToTile(tile.children[1])), level + 1, visibleTiles);
+					// findVisible(tile.children[2], distanceToZoom(distanceToTile(tile.children[2])), level + 1, visibleTiles);
+					// findVisible(tile.children[3], distanceToZoom(distanceToTile(tile.children[3])), level + 1, visibleTiles);
 
-					// findVisible(tile.children[0], zoom, level + 1, visibleTiles);
-					// findVisible(tile.children[1], zoom, level + 1, visibleTiles);
-					// findVisible(tile.children[2], zoom, level + 1, visibleTiles);
-					// findVisible(tile.children[3], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[0], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[1], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[2], zoom, level + 1, visibleTiles);
+					findVisible(tile.children[3], zoom, level + 1, visibleTiles);
 				}
 			}
 		}
@@ -621,9 +600,6 @@
 			const gridPlanePxWidth = PX_WIDTH / nHorizontal;
 			const gridPlanePxHeight = PX_HEIGHT / nVertical;
 
-			const planePosX = (i - (nHorizontal / 2) + 0.5) * gridPlaneWidth;
-			const planePosZ = ((nVertical / 2) - j - 0.5) * gridPlaneHeight;
-
 			const scaledGridPlanePxWidth = gridPlanePxWidth * scale;
 			const scaledGridPlanePxHeight = gridPlanePxHeight * scale;
 
@@ -642,9 +618,9 @@
 
 			planeGrid.rotation.x = -Math.PI / 2;
 
-			planeGrid.position.x = planePosX;
-			planeGrid.position.z = planePosZ;
-			planeGrid.position.y = PLANE_Y;
+			planeGrid.position.x = (i - (nHorizontal / 2) + 0.5) * gridPlaneWidth;
+			planeGrid.position.z = ((nVertical / 2) - j - 0.5) * gridPlaneHeight;
+			planeGrid.position.y = -2280;
 
 			planeGrid.visible = false;
 
@@ -674,7 +650,7 @@
 
 			//planeGrid.add(makeTextSprite(""+scale,{ fontsize: 32, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000/scale,5000/scale,5000/scale)));
 
-			const spriteMaterial = makeTextSprite(scale.toFixed(2) + "(" + planeGrid.position.x + "," + planeGrid.position.z + ")", { fontsize: 28, fontface: "Georgia", borderColor: { r: 255, g: 0, b: 0, a: 1.0 } }, new THREE.Vector3(5000 / scale, 5000 / scale, 5000 / scale)); //tileSprites.get(scale);
+			const spriteMaterial = tileSprites.get(scale);
 			var sprite = new THREE.Sprite(spriteMaterial);
 			sprite.scale.set(5000 / scale, 5000 / scale, 5000 / scale);
 
@@ -739,7 +715,7 @@
 		function toNormalized(x, y) {
 			return new THREE.Vector2(
 				(x / window.innerWidth) * 2 - 1,
-				- (y / window.innerHeight) * 2 + 1
+				(y / window.innerHeight) * 2 - 1
 			);
 		}
 
@@ -747,11 +723,15 @@
 			var intersects = cast(x, y);
 
 			if (intersects.length == 0) {
-				return new THREE.Vector3(xp, 0, yp);
+				intersects = cast(xp, yp);
 			}
 
-			const intersect = intersects[0];
-			return intersects[0].point;
+			if (intersects.length > 0) {
+				const intersect = intersects[0];
+				return new THREE.Vector2(intersect.point.x, intersect.point.z);
+			} else {
+				return new THREE.Vector2(0, 0);
+			}
 		}
 
 		function cast(x, y) {
@@ -761,6 +741,10 @@
 			var objects = [];
 			objects.push(oldWater);
 			var intersects = raycaster.intersectObjects(objects, false);
+
+			if (intersects.length > 0) {
+				console.log("x %d y %d intersect %o", x, y, intersects[0].point);
+			}
 
 			return intersects;
 		}
