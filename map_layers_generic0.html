@@ -88,7 +88,7 @@
 
 		import { GUI } from './jsm/libs/dat.gui.module.js';
 
-		import { MapControls } from './jsm/controls/SlideOrbitControls.js';
+		import { MapControls } from './jsm/controls/RotatedSlideOrbitControls.js';
 		import { Sky } from './jsm/objects/Sky.js';
 		import { Water } from './jsm/objects/Water.js';
 
@@ -114,7 +114,7 @@
 		let MAX_ZOOM = 6;
 		let ZOOM_SCALE_MAP = { 0: 0.1, 1: 0.2, 2: 0.4, 3: 0.6, 4: 0.8, 5: 1.0, 6: 1.4 };
 		let ZOOM_COLOR_MAP = { 0: 'red', 1: 'green', 2: 'yellow', 3: 'blue', 4: 'brown', 5: 'orange', 6: 'purple' };
-		let PLANE_Z = 100; //-2280;
+		let PLANE_Z = -2280;
 
 		let PX_WIDTH = 6834.0;
 		let PX_HEIGHT = 4422.0;
@@ -237,6 +237,7 @@
 			document.body.appendChild(renderer.domElement);
 
 			camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 100, 200000);
+			camera.up = new THREE.Vector3(0, 0, 1);
 		}
 
 		function buildControls() {
@@ -269,7 +270,7 @@
 			skyUniforms['rayleigh'].value = 2;
 			skyUniforms['mieCoefficient'].value = 0.005;
 			skyUniforms['mieDirectionalG'].value = 0.8;
-			//skyUniforms['up'].value =new THREE.Vector3( 0, 0, 1 );
+			skyUniforms['up'].value = new THREE.Vector3(0, 0, 1);
 
 			const pmremGenerator = new THREE.PMREMGenerator(renderer);
 
@@ -473,8 +474,8 @@
 
 			console.log("1-render start ****");
 
-			const bottomLeft = castToPoint(50, window.innerHeight - 50, -90_000, -55_000);
-			const topRight = castToPoint(window.innerWidth - 50, 50, +90_000, +55_000);
+			const bottomLeft = castToPoint(50, window.innerHeight - 50, -95_000, -55_000);
+			const topRight = castToPoint(window.innerWidth - 50, 50, +95_000, +55_000);
 
 			console.log("2-topLeft %o", bottomLeft);
 			console.log("3-bottomRight %o", topRight);
@@ -494,7 +495,7 @@
 
 			viewPlane.position.x = bottomLeft.x + viewRect.width / 2;//controls.target.x;
 			viewPlane.position.y = bottomLeft.y + viewRect.height / 2;//controls.target.z;
-			viewPlane.position.z = PLANE_Z + 50;
+			viewPlane.position.z = 100;
 
 			viewPlane.scale.x = viewRect.width;
 			viewPlane.scale.y = viewRect.height;
@@ -522,7 +523,7 @@
 		}
 
 		function findVisible(tile, zoom, level, viewRect, visibleTiles) {
-			if (!isVisibleRect(tile, viewRect)) {
+			if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect)) {
 				return;
 			}
 
@@ -604,7 +605,7 @@
 			var intersects = cast(x, y);
 
 			if (intersects.length == 0) {
-				return new THREE.Vector3(xp, 0, yp);
+				return new THREE.Vector3(xp, yp, 0);
 			}
 
 			const intersect = intersects[0];
@@ -629,14 +630,10 @@
 			return intersects;
 		}
 
-		function isVisibleRect(tile, viewRect) {
+		function isVisibleRect(tileRect, viewRect) {
 			return false
-				|| isPointInRect(tile.rect, viewRect.x, viewRect.y/*			  */) || isPointInRect(tile.rect, viewRect.x + viewRect.width, viewRect.y)
-				|| isPointInRect(tile.rect, viewRect.x, viewRect.y + viewRect.height) || isPointInRect(tile.rect, viewRect.x + viewRect.width, viewRect.y + viewRect.height)
-
-				|| isPointInRect(viewRect, tile.rect.x, tile.rect.y/*			    */) || isPointInRect(viewRect, tile.rect.x + tile.rect.width, tile.rect.y)
-				|| isPointInRect(viewRect, tile.rect.x, tile.rect.y + tile.rect.height) || isPointInRect(viewRect, tile.rect.x + tile.rect.width, tile.rect.y + tile.rect.height)
-
+				|| isPointInRect(tileRect, viewRect.x, viewRect.y/*			  */) || isPointInRect(tileRect, viewRect.x + viewRect.width, viewRect.y)
+				|| isPointInRect(tileRect, viewRect.x, viewRect.y + viewRect.height) || isPointInRect(tileRect, viewRect.x + viewRect.width, viewRect.y + viewRect.height)
 				;
 		}
 
@@ -649,11 +646,11 @@
 
 			const gridPlaneGeometry = tileGeometries.get(tile.zoom);
 
-			const uOffset = Math.floor((tile.left + HALF_SCENE_WIDTH) / SCENE_WIDTH);
-			const vOffset = Math.floor((tile.bottom + HALF_SCENE_HEIGHT) / SCENE_HEIGHT);
-			//const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(new THREE.Vector2(uOffset, vOffset), nTiles, nTiles));
+			const uOffset = (tile.left + HALF_SCENE_WIDTH) / SCENE_WIDTH;
+			const vOffset = (tile.bottom + HALF_SCENE_HEIGHT) / SCENE_HEIGHT;
+			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(new THREE.Vector2(uOffset, vOffset), nTiles, nTiles));
 
-			const planeGrid = new THREE.Mesh(gridPlaneGeometry, new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], side: THREE.DoubleSide }));
+			//const planeGrid = new THREE.Mesh(gridPlaneGeometry, new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], side: THREE.DoubleSide }));
 
 			//planeGrid.rotation.x = -Math.PI / 2;
 
