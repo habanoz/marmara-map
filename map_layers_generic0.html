@@ -605,7 +605,10 @@
 				pos = tile.plane.position;
 			}
 
-			return camera.position.distanceTo(pos);
+			var distanceToVec = new THREE.Vector3(controls.target.x * 0.5, controls.target.y * 0.5, controls.target.z * 0.5);
+			distanceToVec.add(pos).divideScalar(1.5);
+
+			return camera.position.distanceTo(distanceToVec);
 		}
 
 		function castToPoint(x, y, xp, yp) {
