@@ -93,7 +93,6 @@
 		import { Water } from './jsm/objects/Water.js';
 
 		import Stats from './jsm/libs/stats.module.js';
-		// import { GPUStatsPanel } from './jsm/utils/GPUStatsPanel.js';
 
 		let camera, controls, scene, renderer;
 		let uniforms;
@@ -104,6 +103,7 @@
 		let visibleTiles = [];
 		const tileGeometries = new Map();
 		const tileWireGeometries = new Map();
+
 		let lastPost = new THREE.Vector3();
 		let ground = new THREE.Group();
 		let viewPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }));
@@ -113,7 +113,7 @@
 		let BUMP_SCALE = 5000.0;
 		let MAX_ZOOM = 6;
 		let ZOOM_SCALE_MAP = { 0: 0.1, 1: 0.2, 2: 0.4, 3: 0.6, 4: 0.8, 5: 1.0, 6: 1.4 };
-		let ZOOM_COLOR_MAP = { 0: 'red', 1: 'green', 2: 'yellow', 3: 'blue', 4: 'brown', 5: 'orange', 6: 'purple' };
+		let ZOOM_COLOR_MAP = { 0: 'black', 1: 'red', 2: 'brown', 3: 'orange', 4: 'yellow', 5: 'green', 6: 'blue' };
 		let PLANE_Z = -2280;
 
 		let PX_WIDTH = 6834.0;
@@ -131,7 +131,7 @@
 		const raycaster = new THREE.Raycaster();
 
 		const parameters = {
-			oldWater: false,
+			oldWater: true,
 			inclination: 0.22,
 			azimuth: 0.1
 		};
@@ -201,8 +201,6 @@
 			buildSky();
 
 			uniformsTemplate = buildTemplateUniforms();
-
-			const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true, transparent: true });
 
 			// lights
 			const dirLight1 = new THREE.DirectionalLight(0xffffff);
@@ -321,7 +319,7 @@
 			);
 			water.material.transparent = true;
 			//water.rotation.x = - Math.PI / 2;
-
+			water.visible = !parameters.oldWater;
 			scene.add(water);
 
 			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
@@ -477,24 +475,32 @@
 			const bottomLeft = castToPoint(50, window.innerHeight - 50, -95_000, -55_000);
 			const topRight = castToPoint(window.innerWidth - 50, 50, +95_000, +55_000);
 
-			console.log("2-topLeft %o", bottomLeft);
-			console.log("3-bottomRight %o", topRight);
+			const topLeft = castToPoint(50, 50, -95_000, 55_000);
+			const bottomRight = castToPoint(window.innerWidth - 50, window.innerHeight - 50, +95_000, -55_000);
+
+			console.log("2-bottomLeft %o", bottomLeft);
+			console.log("3-topRight %o", topRight);
+			console.log("4-topLeft %o", topLeft);
+			console.log("5-bottomRight %o", bottomRight);
+
+			const bl = new THREE.Vector2(Math.min(bottomLeft.x, topLeft.x, bottomRight.x, topRight.x), Math.min(bottomLeft.y, topLeft.y, bottomRight.y, topRight.y));
+			const tr = new THREE.Vector2(Math.max(bottomLeft.x, topLeft.x, bottomRight.x, topRight.x), Math.max(bottomLeft.y, topLeft.y, bottomRight.y, topRight.y));
 
 			const viewRect = new THREE.Vector4(
-				bottomLeft.x,
-				bottomLeft.y,
-				topRight.x - bottomLeft.x,
-				topRight.y - bottomLeft.y);
+				bl.x,
+				bl.y,
+				tr.x - bl.x,
+				tr.y - bl.y);
 
-			console.log("4-viewRect %o", viewRect);
+			console.log("6-viewRect %o", viewRect);
 
 			visibleTiles = [];
 			findVisible(rootTile, distanceToZoom(distanceToTile(rootTile)), 0, viewRect, visibleTiles);
 
 			visibleTiles.forEach(tile => tile.show());
 
-			viewPlane.position.x = bottomLeft.x + viewRect.width / 2;//controls.target.x;
-			viewPlane.position.y = bottomLeft.y + viewRect.height / 2;//controls.target.z;
+			viewPlane.position.x = viewRect.x + viewRect.width / 2;//controls.target.x;
+			viewPlane.position.y = viewRect.y + viewRect.height / 2;//controls.target.z;
 			viewPlane.position.z = 100;
 
 			viewPlane.scale.x = viewRect.width;
@@ -523,7 +529,8 @@
 		}
 
 		function findVisible(tile, zoom, level, viewRect, visibleTiles) {
-			if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect)) {
+			if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect) &&
+				!lineOverlap(tile.rect, viewRect) && !lineOverlap(viewRect, tile.rect)) {
 				return;
 			}
 
@@ -630,11 +637,25 @@
 			return intersects;
 		}
 
-		function isVisibleRect(tileRect, viewRect) {
+		function isVisibleRect(rect1, rect2) {
 			return false
-				|| isPointInRect(tileRect, viewRect.x, viewRect.y/*			  */) || isPointInRect(tileRect, viewRect.x + viewRect.width, viewRect.y)
-				|| isPointInRect(tileRect, viewRect.x, viewRect.y + viewRect.height) || isPointInRect(tileRect, viewRect.x + viewRect.width, viewRect.y + viewRect.height)
+				|| isPointInRect(rect1, rect2.x, rect2.y/*			  */) || isPointInRect(rect1, rect2.x + rect2.width, rect2.y)
+				|| isPointInRect(rect1, rect2.x, rect2.y + rect2.height) || isPointInRect(rect1, rect2.x + rect2.width, rect2.y + rect2.height)
 				;
+		}
+
+		function lineOverlap(rect1, rect2) {
+			const bl1x = rect1.x;
+			const bl1y = rect1.y;
+			const tr1x = rect1.x + rect1.width;
+			const tr1y = rect1.y + rect1.height;
+
+			const bl2x = rect2.x;
+			const bl2y = rect2.y;
+			const tr2x = rect2.x + rect2.width;
+			const tr2y = rect2.y + rect2.height;
+
+			return (bl1x <= bl2x && tr2x < tr1x) || (bl1y <= bl2y && tr2y < tr1y);
 		}
 
 		function isPointInRect(rect, x, y) {
@@ -662,7 +683,8 @@
 
 			console.log("New plane added to %o for tile %o", planeGrid.position, tile);
 
-			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true }));
+			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
+			wirePlane.position.z = 2700;
 			planeGrid.add(wirePlane);
 
 			return planeGrid;
