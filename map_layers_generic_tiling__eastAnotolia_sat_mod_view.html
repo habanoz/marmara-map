@@ -566,12 +566,7 @@
 
 			visibleTiles.forEach(tile => tile.show());
 			
-			console.log("%s tiles are visible", visibleTiles.length);
-			console.log("%s tiles (13) are visible", visibleTiles.filter(tile=>tile.zoom==13).length);
-			console.log("%s tiles (12) are visible", visibleTiles.filter(tile=>tile.zoom==12).length);
-			console.log("%s tiles (11) are visible", visibleTiles.filter(tile=>tile.zoom==11).length);
-			console.log("%s tiles (10) are visible", visibleTiles.filter(tile=>tile.zoom==10).length);
-			
+			console.log("%s tiles (13 %s, 12 %s, 11 %s, 10 %s) are visible", visibleTiles.length, visibleTiles.filter(tile=>tile.zoom==13).length, visibleTiles.filter(tile=>tile.zoom==12).length, visibleTiles.filter(tile=>tile.zoom==11).length, visibleTiles.filter(tile=>tile.zoom==10).length);
 			
 			lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 		}
