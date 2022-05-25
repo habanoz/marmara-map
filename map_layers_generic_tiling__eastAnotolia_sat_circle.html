@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>three.js webgl - map controls</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+	<style>
+		body {
+			background-color: #ccc;
+			color: #000;
+		}
+
+		a {
+			color: #f00;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="info">
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - map controls
+	</div>
+
+	<script id="fragmentShader" type="x-shader/x-fragment">
+
+			uniform sampler2D oceanTexture;
+			uniform sampler2D sandyTexture;
+			uniform sampler2D grassTexture;
+			uniform sampler2D grass2Texture;
+			uniform sampler2D rockyTexture;
+			uniform sampler2D snowyTexture;
+			uniform sampler2D satTexture;
+			
+			varying vec2 vUV;
+
+			varying float vAmount;
+
+			void main() 
+			{	
+								
+				vec4 snow  = smoothstep(0.90, 0.99, vAmount) * vec4(1.0, 1.0, 1.0, 0.0); 
+				vec4 rock = ( smoothstep(0.80, 0.95, vAmount) - smoothstep(0.90, 0.96, vAmount) ) * vec4(0.7, 0.5, 0.0, 0.0); 
+				vec4 plateu  =  (smoothstep(0.70, 0.90, vAmount)-smoothstep(0.80, 0.90, vAmount)) * vec4(0.4, 0.8, 0.4, 0.0); 
+				vec4 forest  =  (smoothstep(0.60, 0.80, vAmount)-smoothstep(0.70, 0.80, vAmount)) * vec4(0.1, 0.90, 0.1, 0.0); 
+				vec4 farms  =  (smoothstep(0.50, 0.70, vAmount)-smoothstep(0.60, 0.70, vAmount)) * vec4(0.6, 0.9, 0.0, 0.0); 
+				vec4 sand = (smoothstep(0.40, 0.60, vAmount)- smoothstep(0.50, 0.60, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
+				// vec4 sandy = (smoothstep(0.30, 0.50, vAmount)- smoothstep(0.40, 0.50, vAmount) ) * vec4(0.9, 0.9, 0.1, 0.0);
+				
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) + sand + farms + forest + plateu + snow + rock;
+				gl_FragColor = texture2D( satTexture, vUV );
+			}
+
+		</script>
+
+	<script id="vertexShader" type="x-shader/x-vertex">
+
+			uniform sampler2D bumpTexture;
+			uniform vec2 offset;
+			uniform float bumpScale;
+
+			varying float vAmount;
+			varying vec2 vUV;
+			varying vec2 ttUV;
+
+			void main() 
+			{ 
+				vUV = uv;
+
+				vec4 bumpData = texture2D( bumpTexture, uv );
+				
+				vAmount = bumpData.r; // assuming map is grayscale it doesn't matter if you use r, g, or b.
+				
+				// move the position along the normal
+				vec3 newPosition = position + normal * bumpScale * vAmount;
+				
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( newPosition, 1.0 );
+			}
+
+		</script>
+
+	<script type="module">
+
+		import * as THREE from './threejs/three.module.js';
+
+		import { GUI } from './jsm/libs/dat.gui.module.js';
+
+		import { MapControls } from './jsm/controls/RotatedSlideOrbitControls.js';
+		import { Sky } from './jsm/objects/Sky.js';
+		import { Water } from './jsm/objects/Water.js';
+
+		import Stats from './jsm/libs/stats.module.js';
+
+		let camera, controls, scene, renderer;
+		let uniforms;
+		let water, oldWater, sun;
+		let uniformsTemplate;
+
+		let rootTile;
+		let visibleTiles = [];
+		const tileGeometries = new Map();
+		const tileWireGeometries = new Map();
+
+		let lastPost = new THREE.Vector3();
+		let ground = new THREE.Group();
+		let viewPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }));
+
+		let MAX_DIST = 100_000;
+		let MIN_DIST = 50;
+		let BUMP_SCALE = 60.0;
+		let MAX_ZOOM = 12;
+		let ZOOM_COLOR_MAP = { 0: '#ff0000', 1: '#ff8000', 2: '#ffff00', 3: '#80ff00', 4: '#00ff00', 5: '#00ff80', 6: '#00ffff', 7: '#0080ff', 8: '#0000ff', 9: '#8000ff', 10: '#ff00ff', 11: '#ff0080', 12: '#ffbf00', 13: '#bfff00', 14: '#40ff00', 15: '#00ff40', 16: '00ffbf', 17: '#00bfff', 18: '	#0040ff', 19: '#4000ff', 20: '#bf00ff', 21: '#ff00bf', 22: '#ff0040', 23: 'black' };
+		let PLANE_Z = -33.5;
+		var options = {
+			zoomIn: function () {
+				controls.scale = 0.95;
+			},
+			zoomOut: function () {
+				controls.scale = 1.05;
+			},
+			go2d: function () {
+				camera.position.x = controls.target.x;
+				camera.position.y = controls.target.y;
+			},
+			render2d: true,
+			zoom: 0
+		};
+
+		let SCENE_WIDTH = 200000;
+		let HALF_SCENE_WIDTH = SCENE_WIDTH / 2;
+		let SCENE_HEIGHT = 120000;
+		let HALF_SCENE_HEIGHT = SCENE_HEIGHT / 2;
+
+		const stats = Stats()
+		document.body.appendChild(stats.dom);
+
+		const gui = new GUI();
+		const raycaster = new THREE.Raycaster();
+
+		const parameters = {
+			oldWater: true,
+			inclination: 0.22,
+			azimuth: 0.1
+		};
+		
+		class ACircle {
+			constructor(centerV3, radius) {
+				this.center = centerV3;
+				this.radius = radius;
+			}
+		}
+
+		class ATile {
+			constructor(left, bottom, width, height, zoom) {
+				this.left = left;
+				this.bottom = bottom;
+
+				this.centerX = left + width / 2;
+				this.centerY = bottom + height / 2;
+
+				this.width = width;
+				this.height = height;
+
+				this.rect = new THREE.Vector4(left, bottom, width, height);
+
+				this.zoom = zoom;
+
+				this.plane = null;
+				this.rectangle = null;
+
+				this.children = null;
+				this.render2d = true;
+
+				const nTiles = zoomToNTiles(this.zoom);
+				const tileWidth = SCENE_WIDTH / nTiles;
+				const tileHeight = SCENE_HEIGHT / nTiles;
+
+
+				this.uOffset = Math.floor((this.left + HALF_SCENE_WIDTH) / tileWidth);
+				this.vOffset = Math.floor((this.bottom + HALF_SCENE_HEIGHT) / tileHeight);
+
+			}
+
+			show() {
+				if (this.render2d != options.render2d && this.plane != null) {
+					this.plane.material = buildCustomMaterial(this.uOffset, this.vOffset, this.zoom);
+					this.render2d = options.render2d;
+				}
+
+				if (this.plane == null) {
+					this.plane = newTilePlane(this);
+					ground.add(this.plane);
+				}
+
+				this.plane.visible = true;
+			}
+
+			hide() {
+				this.plane.visible = false;
+			}
+
+			split() {
+				if (this.zoom == MAX_ZOOM) {
+					this.children = [];
+					return;
+				}
+
+				const halfWidth = this.width / 2;
+				const halfHeight = this.height / 2;
+
+				const tile00 = new ATile(this.left/*		*/, this.bottom/*		  */, halfWidth, halfHeight, this.zoom + 1);
+				const tile01 = new ATile(this.left + halfWidth, this.bottom/*		  */, halfWidth, halfHeight, this.zoom + 1);
+				const tile10 = new ATile(this.left/*		*/, this.bottom + halfHeight, halfWidth, halfHeight, this.zoom + 1);
+				const tile11 = new ATile(this.left + halfWidth, this.bottom + halfHeight, halfWidth, halfHeight, this.zoom + 1);
+
+				this.children = [tile00, tile01, tile10, tile11];
+			}
+
+			findVisible2D(zoom, level, viewRect, visibleTiles) {
+				if (!isVisibleRect(this.rect, viewRect) && !isVisibleRect(viewRect, this.rect)
+					// && !lineOverlap(tile.rect, viewRect) && !lineOverlap(viewRect, tile.rect)
+				) {
+					return;
+				}
+
+				if (this.children == null) {
+					this.split();
+				}
+
+				if (this.children.length == 0 || level >= zoom) {
+					visibleTiles.push(tile);
+				} else {
+					tile.children[0].findVisible2D(zoom, level + 1, viewRect, visibleTiles);
+					tile.children[1].findVisible2D(zoom, level + 1, viewRect, visibleTiles);
+					tile.children[2].findVisible2D(zoom, level + 1, viewRect, visibleTiles);
+					tile.children[3].findVisible2D(zoom, level + 1, viewRect, visibleTiles);
+				}
+
+			}
+
+			findVisible(zoom, level, viewRect, visibleTiles) {
+				const tile = this;
+
+				if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect)
+					// && !lineOverlap(tile.rect, viewRect) && !lineOverlap(viewRect, tile.rect)
+				) {
+					return;
+				}
+
+				if (tile.children == null) {
+					tile.split();
+				}
+
+				if (tile.children.length == 0 || level >= zoom) {
+					visibleTiles.push(tile);
+					// console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
+				} else {
+					tile.children[0].findVisible(distanceToZoom(distanceToTile(tile.children[0])), level + 1, viewRect, visibleTiles);
+					tile.children[1].findVisible(distanceToZoom(distanceToTile(tile.children[1])), level + 1, viewRect, visibleTiles);
+					tile.children[2].findVisible(distanceToZoom(distanceToTile(tile.children[2])), level + 1, viewRect, visibleTiles);
+					tile.children[3].findVisible(distanceToZoom(distanceToTile(tile.children[3])), level + 1, viewRect, visibleTiles);
+				}
+
+			}
+		}
+
+		init();
+		//render(); // remove when using next line for animation loop (requestAnimationFrame)
+		animate();
+
+		function init() {
+			const initStartDate = new Date();
+
+			buildSceneCamera();
+			buildControls();
+			buildWater();
+			buildSky();
+
+			uniformsTemplate = buildTemplateUniforms();
+
+			// lights
+			const dirLight1 = new THREE.DirectionalLight(0xffffff);
+			dirLight1.position.set(1, 1, 1);
+			//scene.add( dirLight1 );
+
+			const dirLight2 = new THREE.DirectionalLight(0x002288);
+			dirLight2.position.set(- 1, - 1, - 1);
+			//scene.add( dirLight2 );
+
+			const ambientLight = new THREE.AmbientLight(0x222222);
+			//scene.add( ambientLight );
+
+			//
+			buildMap();
+
+			window.addEventListener('resize', onWindowResize);
+			document.addEventListener('pointerdown', onDocumentMouseDown, false);
+
+			buildGui();
+
+			console.log("Init completed in %s millis", new Date().getTime() - initStartDate);
+		}
+
+		function buildSceneCamera() {
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color(0xcccccc);
+			//scene.fog = new THREE.FogExp2(0xcccccc, 0.002);
+
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+
+			camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 100, 200000);
+			camera.up = new THREE.Vector3(0, 0, 1);
+		}
+
+		function buildControls() {
+			controls = new MapControls(camera, renderer.domElement, MAX_ZOOM);
+
+			controls.enableDamping = false;
+			controls.dampingFactor = 0.05;
+
+			controls.screenSpacePanning = false;
+
+			controls.minDistance = MIN_DIST;
+			controls.maxDistance = MAX_DIST;
+
+			//controls.maxPolarAngle = Math.PI / 2;
+
+			camera.position.set(0, 0, MAX_DIST);
+			controls.target.copy(new THREE.Vector3(0, 0, 0));
+
+			controls.zoomSpeed = 10.0;
+		}
+
+		function buildSky() {
+			sun = new THREE.Vector3();
+
+			const sky = new Sky();
+
+			sky.scale.setScalar(300000);
+			scene.add(sky);
+
+			const skyUniforms = sky.material.uniforms;
+			skyUniforms['turbidity'].value = 10;
+			skyUniforms['rayleigh'].value = 2;
+			skyUniforms['mieCoefficient'].value = 0.005;
+			skyUniforms['mieDirectionalG'].value = 0.8;
+			skyUniforms['up'].value = new THREE.Vector3(0, 0, 1);
+
+			const pmremGenerator = new THREE.PMREMGenerator(renderer);
+
+			function updateSun() {
+
+				const theta = Math.PI * (parameters.inclination - 0.5);
+				const phi = 2 * Math.PI * (parameters.azimuth - 0.5);
+
+				sun.x = Math.cos(phi);
+				sun.y = Math.sin(phi) * Math.sin(theta);
+				sun.z = Math.sin(phi) * Math.cos(theta);
+
+				sky.material.uniforms['sunPosition'].value.copy(sun);
+				water.material.uniforms['sunDirection'].value.copy(sun).normalize();
+
+				scene.environment = pmremGenerator.fromScene(sky).texture;
+
+			}
+
+			updateSun();
+
+			const folderSky = gui.addFolder('Sky');
+			folderSky.add(parameters, 'inclination', 0, 0.5, 0.0001).onChange(updateSun);
+			folderSky.add(parameters, 'azimuth', 0, 1, 0.0001).onChange(updateSun);
+			// folderSky.open();
+		}
+
+		function buildWater() {
+			const waterGeometry = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1000, 600);
+
+			water = new Water(
+				waterGeometry,
+				{
+					textureWidth: 512,
+					textureHeight: 512,
+					waterNormals: new THREE.TextureLoader().load('images/waternormals.jpg', function (texture) {
+
+						texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+
+					}),
+					alpha: 0.90,
+					sunDirection: new THREE.Vector3(),
+					sunColor: 0xffffff,
+					waterColor: 0x001e0f,
+					distortionScale: 3.7,
+					fog: scene.fog !== undefined
+				}
+			);
+			water.material.transparent = true;
+			//water.rotation.x = - Math.PI / 2;
+			water.visible = !parameters.oldWater;
+			scene.add(water);
+
+			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
+			var oldWaterTex = new THREE.ImageUtils.loadTexture('images/water512.jpg');
+			oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping;
+			oldWaterTex.repeat.set(5, 5);
+
+			var oldWaterMat = new THREE.MeshBasicMaterial({ map: oldWaterTex, transparent: true, opacity: 0.4 });
+			oldWater = new THREE.Mesh(oldWaterGeo, oldWaterMat);
+			// oldWater.rotation.x = -Math.PI / 2;
+
+			oldWater.position.y = 0;
+			oldWater.renderOrder = 20;
+			oldWater.visible = parameters.oldWater;
+
+			scene.add(oldWater);
+
+			function toggleWater() {
+
+				if (parameters.oldWater) {
+					//water.visible = false;
+					oldWater.visible = true;
+				} else {
+					//water.visible = true;
+					oldWater.visible = false;
+				}
+			}
+
+			const waterUniforms = water.material.uniforms;
+
+			const folderWater = gui.addFolder('Water');
+			folderWater.add(parameters, 'oldWater').name('Toggle water').onChange(toggleWater);
+			folderWater.add(waterUniforms.distortionScale, 'value', 0, 8, 0.1).name('distortionScale');
+			folderWater.add(waterUniforms.size, 'value', 0.1, 10, 0.1).name('size');
+			folderWater.add(waterUniforms.alpha, 'value', 0.85, 1, .01).name('alpha');
+			// folderWater.open();
+		}
+
+		function buildGui() {
+			gui.add(controls, 'screenSpacePanning');
+			gui.add(controls.pSphere, 'radius', 0, MAX_DIST).onChange(render).listen();
+			gui.add(camera.position, 'y', 0, MAX_DIST, 1000).onChange(render).listen();
+			gui.add(options, 'render2d').listen();
+			gui.add(controls, 'zoomLevel').listen();
+			gui.add(options, 'zoom').listen();
+			gui.add(options, 'zoomIn');
+			gui.add(options, 'zoomOut');
+			gui.add(options, 'go2d');
+		}
+
+		function buildTemplateUniforms() {
+
+
+			var oceanTexture = new THREE.ImageUtils.loadTexture('images/dirt-512.jpg');
+			oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping;
+
+			var sandyTexture = new THREE.ImageUtils.loadTexture('images/dirt.jpg');
+			sandyTexture.wrapS = sandyTexture.wrapT = THREE.RepeatWrapping;
+
+			var grassTexture = new THREE.ImageUtils.loadTexture('images/grass-512.jpg');
+			grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+
+			var grass2Texture = new THREE.ImageUtils.loadTexture('images/grass-512-2.jpg');
+			grass2Texture.wrapS = grass2Texture.wrapT = THREE.RepeatWrapping;
+
+			var rockyTexture = new THREE.ImageUtils.loadTexture('images/rock-512.jpg');
+			rockyTexture.wrapS = rockyTexture.wrapT = THREE.RepeatWrapping;
+
+			var snowyTexture = new THREE.ImageUtils.loadTexture('images/snow-512.jpg');
+			snowyTexture.wrapS = snowyTexture.wrapT = THREE.RepeatWrapping;
+
+			var uniforms = {
+				bumpScale: { type: "f", value: BUMP_SCALE },
+				oceanTexture: { type: "t", value: oceanTexture },
+				sandyTexture: { type: "t", value: sandyTexture },
+				grassTexture: { type: "t", value: grassTexture },
+				grass2Texture: { type: "t", value: grass2Texture },
+				rockyTexture: { type: "t", value: rockyTexture },
+				snowyTexture: { type: "t", value: snowyTexture },
+			};
+
+			return uniforms;
+		}
+
+		function buildCustomMaterial(x, y, z) {
+			var uniforms = Object.assign({}, uniformsTemplate);
+			var bumpTexture = new THREE.ImageUtils.loadTexture(`images/tilesEastAnatolia/${z}/${x}/${y}.png`);
+			var satTexture = new THREE.ImageUtils.loadTexture(`images/eastAnatoliaSat/${z}/${x}/${y}.png`);
+			// bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
+
+			uniforms['bumpTexture'] = { type: "t", value: bumpTexture };
+			uniforms['satTexture'] = { type: "t", value: satTexture };
+
+			if (options.render2d) {
+				return new THREE.MeshBasicMaterial({
+					map: bumpTexture,
+				});
+			}
+			else {
+				return new THREE.ShaderMaterial(
+					{
+						uniforms: uniforms,
+						vertexShader: document.getElementById('vertexShader').textContent,
+						fragmentShader: document.getElementById('fragmentShader').textContent
+					}
+				);
+
+			}
+
+		}
+
+		function onWindowResize() {
+
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
+		}
+
+		function animate() {
+
+			requestAnimationFrame(animate);
+
+			controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+			render();
+
+			stats.update();
+		}
+
+		function render() {
+			const time = performance.now() * 0.001;
+			water.material.uniforms['time'].value += 1.0 / 60.0;
+
+			renderMap();
+
+			renderer.render(scene, camera);
+		}
+
+
+		function renderMap() {
+			if (lastPost.equals(camera.position)) return;
+
+			visibleTiles.forEach(tile => tile.hide());
+
+			// console.log("1-render start ****");
+
+			const bottomLeft = castToPoint(50, window.innerHeight - 50, -95_000, -55_000);
+			const topRight = castToPoint(window.innerWidth - 50, 50, +95_000, +55_000);
+
+			const topLeft = castToPoint(50, 50, -95_000, 55_000);
+			const bottomRight = castToPoint(window.innerWidth - 50, window.innerHeight - 50, +95_000, -55_000);
+			options.render2d = Math.abs(camera.position.z - controls.target.z - camera.position.distanceTo(controls.target)) < 0.001;
+
+			// console.log("2-bottomLeft %o", bottomLeft);
+			// console.log("3-topRight %o", topRight);
+			// console.log("4-topLeft %o", topLeft);
+			// console.log("5-bottomRight %o", bottomRight);
+
+			const bl = new THREE.Vector2(Math.min(bottomLeft.x, topLeft.x, bottomRight.x, topRight.x), Math.min(bottomLeft.y, topLeft.y, bottomRight.y, topRight.y));
+			const tr = new THREE.Vector2(Math.max(bottomLeft.x, topLeft.x, bottomRight.x, topRight.x), Math.max(bottomLeft.y, topLeft.y, bottomRight.y, topRight.y));
+
+			const viewRect = new THREE.Vector4(
+				bl.x,
+				bl.y,
+				tr.x - bl.x,
+				tr.y - bl.y);
+				
+			const viewCircle = new ACircle(new THREE.Vector3(bl.x+), Math.max(tr.x - bl.x, tr.y - bl.y));
+			
+
+			// console.log("6-viewRect %o", viewRect);
+
+			visibleTiles = [];
+			options.zoom = distanceToZoom(camera.position.distanceTo(controls.target));
+
+			if (options.render2d) {
+				findVisible2D(rootTile, controls.zoomLevel, 0, viewRect, visibleTiles);
+			} else {
+				findVisible(rootTile, controls.zoomLevel, 0, viewRect, visibleTiles);
+			}
+
+
+			visibleTiles.forEach(tile => tile.show());
+
+			viewPlane.position.x = viewRect.x + viewRect.width / 2;//controls.target.x;
+			viewPlane.position.y = viewRect.y + viewRect.height / 2;//controls.target.z;
+			viewPlane.position.z = 50;
+
+			viewPlane.scale.x = viewRect.width;
+			viewPlane.scale.y = viewRect.height;
+			viewPlane.visible = true;
+
+			lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
+		}
+
+		function buildMap() {
+			// ground.rotation.x = -Math.PI / 2;
+			scene.add(ground);
+
+			ground.add(viewPlane);
+
+			rootTile = new ATile(-HALF_SCENE_WIDTH, -HALF_SCENE_HEIGHT, SCENE_WIDTH, SCENE_HEIGHT, 0);
+
+			for (var zoom in ZOOM_COLOR_MAP) {
+				zoom = parseInt(zoom);
+				const nTiles = zoomToNTiles(zoom);
+
+				tileGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles, 256, 256));
+				tileWireGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles));
+			}
+		}
+
+		function findVisible(tile, zoom, level, viewCircle, visibleTiles) {
+			if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect)
+				// && !lineOverlap(tile.rect, viewRect) && !lineOverlap(viewRect, tile.rect)
+				&& !isPointInRect(tile.rect, viewRect.x + viewRect.width / 2, viewRect.y + viewRect.height / 2)
+				&& !isPointInRect(viewRect, tile.rect.x + tile.rect.width / 2, tile.rect.y + tile.rect.height / 2)
+			) {
+				return;
+			}
+
+			if (tile.children == null) {
+				tile.split();
+			}
+
+			if (tile.children.length == 0 || level >= zoom) {
+				visibleTiles.push(tile);
+				// console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
+			} else if (level == zoom) {
+				var visibleSubTiles = [];
+				for (var i = 0; i < 4; i++) {
+					const child = tile.children[i];
+					findVisible(child, zoom, level + 1, viewRect, visibleSubTiles);
+				}
+
+				if (visibleSubTiles.length == 0) {
+					visibleTiles.push(tile);
+				} else {
+					visibleTiles.push(...visibleSubTiles);
+				}
+			}
+			else {
+				for (var i = 0; i < 4; i++) {
+					const child = tile.children[i];
+					//findVisible(child, zoom, level + 1, viewRect, visibleTiles);
+					findVisible(child, distanceToZoom(camera.position.distanceTo(new THREE.Vector3(tile.centerX, tile.centerY, controls.target.z).add(controls.target).divideScalar(2.0))), level + 1, viewRect, visibleTiles);
+					
+				}
+			}
+
+		}
+
+		function findVisible2D(tile, zoom, level, viewRect, visibleTiles) {
+			if (!isVisibleRect(tile.rect, viewRect) && !isVisibleRect(viewRect, tile.rect)
+				// && !lineOverlap(tile.rect, viewRect) && !lineOverlap(viewRect, tile.rect)
+				&& !isPointInRect(tile.rect, viewRect.x + viewRect.width / 2, viewRect.y + viewRect.height / 2)
+				&& !isPointInRect(viewRect, tile.rect.x + tile.rect.width / 2, tile.rect.y + tile.rect.height / 2)
+			) {
+				return;
+			}
+
+			if (tile.children == null) {
+				tile.split();
+			}
+
+			if (tile.children.length == 0 || level >= zoom) {
+				visibleTiles.push(tile);
+				// console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
+			} else {
+				findVisible2D(tile.children[0], zoom, level + 1, viewRect, visibleTiles);
+				findVisible2D(tile.children[1], zoom, level + 1, viewRect, visibleTiles);
+				findVisible2D(tile.children[2], zoom, level + 1, viewRect, visibleTiles);
+				findVisible2D(tile.children[3], zoom, level + 1, viewRect, visibleTiles);
+			}
+
+		}
+
+		function distanceToZoom(distance) {
+			var zoom = 0;
+
+			if (distance > 59784) {
+				zoom = 0;
+			}
+			else if (distance > 35849) {
+				zoom = 1;
+			}
+			else if (distance > 21464) {
+				zoom = 2;
+			}
+			else if (distance > 12851) {
+				zoom = 3;
+			}
+			else if (distance > 7694) {
+				zoom = 4;
+			}
+			else if (distance > 4607) {
+				zoom = 5;
+			} else if (distance > 2758) {
+				zoom = 6;
+			}
+			else if (distance > 1652) {
+				zoom = 7;
+			} else if (distance > 989) {
+				zoom = 8;
+			} else if (distance > 592) {
+				zoom = 9;
+			} else if (distance > 354) {
+				zoom = 10;
+			} else if (distance > 212) {
+				zoom = 11;
+			} else {
+				zoom = 12;
+			}
+
+			return zoom;
+		}
+
+		function distanceToTile(tile) {
+			if (tile == null) {
+				console.log("Tile plane null left=%s,top=%s width=%s,height=%s, depth=%s ", tile.left, tile.top, tile.width, tile.height, tile.depth);
+				return 1_000_000;
+			}
+
+			var pos = new THREE.Vector3(tile.centerX, tile.centerY, PLANE_Z);
+			if (tile.plane != null) {
+				pos = tile.plane.position;
+			}
+
+			// var distanceToVec = new THREE.Vector3(controls.target.x * 0.5, controls.target.y * 0.5, controls.target.z * 0.5);
+			// distanceToVec.add(pos).divideScalar(1.5);
+
+			//return camera.position.distanceTo(distanceToVec);
+			return camera.position.distanceTo(pos);
+		}
+
+		function castToPoint(x, y, xp, yp) {
+			var intersects = cast(x, y);
+
+			if (intersects.length == 0) {
+				return new THREE.Vector3(xp, yp, 0);
+			}
+
+			const intersect = intersects[0];
+			return intersects[0].point;
+		}
+
+		function toNormalized(x, y) {
+			return new THREE.Vector2(
+				(x / window.innerWidth) * 2 - 1,
+				- (y / window.innerHeight) * 2 + 1
+			);
+		}
+
+		function cast(x, y) {
+			const point = toNormalized(x, y);
+			raycaster.setFromCamera(point, camera);
+
+			var objects = [];
+			objects.push(oldWater);
+			var intersects = raycaster.intersectObjects(objects, false);
+
+			return intersects;
+		}
+
+		function isVisibleRect(rect1, rect2) {
+			return false
+				|| isPointInRect(rect1, rect2.x, rect2.y/*			  */) || isPointInRect(rect1, rect2.x + rect2.width, rect2.y)
+				|| isPointInRect(rect1, rect2.x, rect2.y + rect2.height) || isPointInRect(rect1, rect2.x + rect2.width, rect2.y + rect2.height)
+				;
+		}
+
+		function lineOverlap(rect1, rect2) {
+			const bl1x = rect1.x;
+			const bl1y = rect1.y;
+			const tr1x = rect1.x + rect1.width;
+			const tr1y = rect1.y + rect1.height;
+
+			const bl2x = rect2.x;
+			const bl2y = rect2.y;
+			const tr2x = rect2.x + rect2.width;
+			const tr2y = rect2.y + rect2.height;
+
+			return (bl1x <= bl2x && tr2x < tr1x) || (bl1y <= bl2y && tr2y < tr1y);
+		}
+
+		function isPointInRect(rect, x, y) {
+			return rect.x <= x && x <= rect.x + rect.width && rect.y <= y && y <= rect.y + rect.height
+		}
+		
+		function isPointInCircle(center, r, point) {
+			return (center.x-point.x)**2+(center.y-point.y)**2 < r**2
+		}
+		
+		function newTilePlane(tile) {
+
+			const gridPlaneGeometry = tileGeometries.get(tile.zoom);
+			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(tile.uOffset, tile.vOffset, tile.zoom));
+
+			//const planeGrid = new THREE.Mesh(gridPlaneGeometry, new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], side: THREE.DoubleSide }));
+
+			//planeGrid.rotation.x = -Math.PI / 2;
+
+			planeGrid.position.x = tile.centerX;
+			planeGrid.position.y = tile.centerY;
+			planeGrid.position.z = PLANE_Z;
+
+			planeGrid.visible = false;
+
+			// console.log("New plane added to %o for tile %o", planeGrid.position, tile);
+
+			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
+			wirePlane.position.z = 1;
+			planeGrid.add(wirePlane);
+
+			return planeGrid;
+		}
+
+		function zoomToNTiles(zoom) {
+			return 2 ** (zoom);
+		}
+
+		function onDocumentMouseDown(event) {
+			// the following line would stop any other event handler from firing
+			// (such as the mouse's TrackballControls)
+			// event.preventDefault();
+
+			//console.log("Click.");
+
+			// update the mouse variable
+			const mousex = (event.clientX / window.innerWidth) * 2 - 1;
+			const mousey = - (event.clientY / window.innerHeight) * 2 + 1;
+
+			// find intersections
+
+			// create a Ray with origin at the mouse position
+			//   and direction into the scene (camera direction)
+			var vector = new THREE.Vector3(mousex, mousey, 1);
+			vector.unproject(camera);
+			var ray = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
+
+			// create an array containing all objects in the scene with which the ray intersects
+			const visiblePlanes = visibleTiles.filter(t=>t.plane!=null).map(t=>t.plane);
+			var intersects = ray.intersectObjects(visiblePlanes);
+
+			// if there is one (or more) intersections
+			if (intersects.length > 0) {
+				// console.log("Hit @ " + toString(intersects[0].point));
+				// change the color of the closest face.
+				// intersects[0].face.color.setRGB(0.8 * Math.random() + 0.2, 0, 0);
+				// intersects[0].object.geometry.colorsNeedUpdate = true;
+				for (var tile of visibleTiles){
+					if (tile.plane == intersects[0].object){
+						console.log("Tile intersected %s %s", tile.uOffset, tile.vOffset);
+					}
+				}
+			}
+
+		}
+
+	</script>
+
+</body>
+
+</html>

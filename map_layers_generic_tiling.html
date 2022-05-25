@@ -107,9 +107,9 @@
 		let MAX_DIST = 100_000;
 		let MIN_DIST = 50;
 		let BUMP_SCALE = 100.0;
-		let MAX_ZOOM = 8;
+		let MAX_ZOOM = 10;
 		let ZOOM_COLOR_MAP = { 0: '#ff0000', 1: '#ff8000', 2: '#ffff00', 3: '#80ff00', 4: '#00ff00', 5: '#00ff80', 6: '#00ffff', 7: '#0080ff', 8: '#0000ff', 9: '#8000ff', 10: '#ff00ff', 11: '#ff0080', 12: '#ffbf00', 13: '#bfff00', 14: '#40ff00', 15: '#00ff40', 16: '00ffbf', 17: '#00bfff', 18: '	#0040ff', 19: '#4000ff', 20: '#bf00ff', 21: '#ff00bf', 22: '#ff0040', 23: 'black' };
-		let PLANE_Z = -1;
+		let PLANE_Z = -47.5;
 		var options = {
 			zoomIn: function () {
 				controls.scale = 0.95;
@@ -289,6 +289,7 @@
 			buildMap();
 
 			window.addEventListener('resize', onWindowResize);
+			document.addEventListener('pointerdown', onDocumentMouseDown, false);
 
 			buildGui();
 
@@ -479,8 +480,8 @@
 
 		function buildCustomMaterial(x, y, z) {
 			var uniforms = Object.assign({}, uniformsTemplate);
-			var bumpTexture = new THREE.ImageUtils.loadTexture(`images/tiles8/${z}/${x}/${y}.jpg`);
-			bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
+			var bumpTexture = new THREE.ImageUtils.loadTexture(`images/tilesn40e25/${z}/${x}/${y}.png`);
+			// bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
 
 			uniforms['bumpTexture'] = { type: "t", value: bumpTexture };
 
@@ -794,7 +795,7 @@
 			// console.log("New plane added to %o for tile %o", planeGrid.position, tile);
 
 			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
-			wirePlane.position.z = 200;
+			wirePlane.position.z = 1;
 			planeGrid.add(wirePlane);
 
 			return planeGrid;
@@ -802,6 +803,44 @@
 
 		function zoomToNTiles(zoom) {
 			return 2 ** (zoom);
+		}
+
+		function onDocumentMouseDown(event) {
+			// the following line would stop any other event handler from firing
+			// (such as the mouse's TrackballControls)
+			// event.preventDefault();
+
+			//console.log("Click.");
+
+			// update the mouse variable
+			const mousex = (event.clientX / window.innerWidth) * 2 - 1;
+			const mousey = - (event.clientY / window.innerHeight) * 2 + 1;
+
+			// find intersections
+
+			// create a Ray with origin at the mouse position
+			//   and direction into the scene (camera direction)
+			var vector = new THREE.Vector3(mousex, mousey, 1);
+			vector.unproject(camera);
+			var ray = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
+
+			// create an array containing all objects in the scene with which the ray intersects
+			const visiblePlanes = visibleTiles.filter(t=>t.plane!=null).map(t=>t.plane);
+			var intersects = ray.intersectObjects(visiblePlanes);
+
+			// if there is one (or more) intersections
+			if (intersects.length > 0) {
+				// console.log("Hit @ " + toString(intersects[0].point));
+				// change the color of the closest face.
+				// intersects[0].face.color.setRGB(0.8 * Math.random() + 0.2, 0, 0);
+				// intersects[0].object.geometry.colorsNeedUpdate = true;
+				for (var tile of visibleTiles){
+					if (tile.plane == intersects[0].object){
+						console.log("Tile intersected %s %s", tile.uOffset, tile.vOffset);
+					}
+				}
+			}
+
 		}
 
 	</script>
