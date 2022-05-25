@@ -113,7 +113,7 @@
 
 		let camera, controls, scene, renderer;
 		let uniforms;
-		let water, oldWater, sun;
+		let water, oldWater, oldWaterTex, noBumpTex, sun;
 		let uniformsTemplate;
 		const frustum = new THREE.Frustum();
 
@@ -128,11 +128,10 @@
 
 		let lastPost = new THREE.Vector3();
 		let ground = new THREE.Group();
-		let viewPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: false, transparent: true, opacity: 0.5 }));
 
-		let MAX_DIST = 800_000;
+		let MAX_DIST = 2_000_000;
 		let MIN_DIST = 40;
-		let BUMP_SCALE = 60.0;
+		let BUMP_SCALE = 100.0;
 		let MAX_ZOOM = 13;
 		let ZOOM_COLOR_MAP = { 0: '#ff0000', 1: '#ff8000', 2: '#ffff00', 3: '#80ff00', 4: '#00ff00', 5: '#00ff80', 6: '#00ffff', 7: '#0080ff', 8: '#0000ff', 9: '#8000ff', 10: '#ff00ff', 11: '#ff0080', 12: '#ffbf00', 13: '#bfff00', 14: '#40ff00', 15: '#00ff40', 16: '00ffbf', 17: '#00bfff', 18: '	#0040ff', 19: '#4000ff', 20: '#bf00ff', 21: '#ff00bf', 22: '#ff0040', 23: 'black' };
 		let PLANE_Z = -29.5;
@@ -154,9 +153,9 @@
 			zoom: 0
 		};
 
-		let SCENE_WIDTH = 200000;
+		let SCENE_WIDTH = 500_000;
 		let HALF_SCENE_WIDTH = SCENE_WIDTH / 2;
-		let SCENE_HEIGHT = 200000;
+		let SCENE_HEIGHT = 500_000;
 		let HALF_SCENE_HEIGHT = SCENE_HEIGHT / 2;
 
 		const stats = Stats()
@@ -183,11 +182,10 @@
 				this.height = height;
 
 				this.box = new THREE.Box3();
-				this.box.setFromCenterAndSize(new THREE.Vector3(this.centerX, this.centerY, PLANE_Z), new THREE.Vector3(width, height, 500));
+				this.box.setFromCenterAndSize(new THREE.Vector3(this.centerX, this.centerY, PLANE_Z), new THREE.Vector3(width, height, 5));
 				
 				this.zoom = zoom;
 
-				this.plane2d = null;
 				this.plane = null;
 				this.showBorder = false;
 
@@ -250,7 +248,7 @@
 			buildSceneCamera();
 			buildControls();
 			buildWater();
-			buildSky();
+			//buildSky();
 
 			uniformsTemplate = buildTemplateUniforms();
 
@@ -378,7 +376,9 @@
 			scene.add(water);
 
 			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
-			var oldWaterTex = new THREE.ImageUtils.loadTexture('images/water512.jpg');
+			oldWaterTex = new THREE.TextureLoader().load('images/water512.jpg');
+			noBumpTex = new THREE.TextureLoader().load('images/black.jpg');
+			
 			oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping;
 			oldWaterTex.repeat.set(5, 5);
 
@@ -386,7 +386,8 @@
 			oldWater = new THREE.Mesh(oldWaterGeo, oldWaterMat);
 			// oldWater.rotation.x = -Math.PI / 2;
 
-			oldWater.position.y = 0;
+			///oldWater.position.y = 0;
+			oldWater.position.z = 20.1;
 			oldWater.renderOrder = 20;
 			oldWater.visible = parameters.oldWater;
 
@@ -424,7 +425,7 @@
 			gui.add(options, 'zoomIn');
 			gui.add(options, 'zoomOut');
 			gui.add(options, 'go2d');
-			gui.add(viewPlane.position,'z');
+			gui.add(oldWater.position,'z');
 		}
 		
 		function renderModeChanged(){
@@ -450,22 +451,50 @@
 		}
 		
 		function buildCustomMaterial(x, y, z, border=false) {
-			var uniforms = Object.assign({}, uniformsTemplate);
-			var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`);
+			
+			//var bumpTexture = new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`);
+			
+			// var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`);
 			// bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
 
-			uniforms['bumpTexture'] = { type: "t", value: bumpTexture };
-			uniforms['satTexture'] = { type: "t", value: satTexture };
-			uniforms['borderAmount'] = { type: "f", value: 1.0 };
+			
 
 			if (options.render2d) {
-				return new THREE.MeshBasicMaterial({
-					map: satTexture,
+				const mat2d =  new THREE.MeshBasicMaterial({
+					map: oldWaterTex,
 				});
+				
+				var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`, 
+					function ( texture ) {
+						 mat2d.map = texture;
+						 forceRenderMap();
+					}
+				);
+				
+				return mat2d;
 			}
 			else {
+				var uniforms = Object.assign({}, uniformsTemplate);
+				uniforms['bumpTexture'] = { type: "t", value: noBumpTex };
+				uniforms['satTexture'] = { type: "t", value: oldWaterTex };
+				uniforms['borderAmount'] = { type: "f", value: 1.0 };
 			
 				const fragmentShaderName = options.renderTexture? (border?'fragmentShaderTextureBorder':'fragmentShaderTexture'):'fragmentShaderColor';
+				
+				new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`, 
+					function ( texture ) {
+						 uniforms['satTexture'] = { type: "t", value: texture };						
+						 
+						 
+						 new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`, 
+							function ( bTexture ) {
+								 uniforms['bumpTexture'] = { type: "t", value: bTexture };						
+								 forceRenderMap();
+							}
+						);
+						 
+					}
+				);
 				
 				return new THREE.ShaderMaterial(
 					{
@@ -501,7 +530,7 @@
 		function render() {
 			const time = performance.now() * 0.001;
 			water.material.uniforms['time'].value += 1.0 / 60.0;
-
+			if (Math.abs(lastPost.x-camera.position.x)<0.001 && Math.abs(lastPost.y-camera.position.y)<0.001 && Math.abs(lastPost.z-camera.position.z)<0.001) return;
 			renderMap();
 
 			renderer.render(scene, camera);
@@ -509,11 +538,11 @@
 
 
 		function renderMap() {
-			if (lastPost.equals(camera.position)) return;
+			//if (Math.abs(lastPost.x-camera.position.x)<0.001 && Math.abs(lastPost.y-camera.position.y)<0.001 && Math.abs(lastPost.z-camera.position.z)<0.001) return;
 
 			visibleTiles.forEach(tile => tile.hide());
 
-			// console.log("1-renderMap start ****");
+			//console.log("1-renderMap start ****");
 
 			const render2dOld = options.render2d;
 			options.render2d = Math.abs(camera.position.z - controls.target.z - camera.position.distanceTo(controls.target)) < 0.001;
@@ -521,12 +550,6 @@
 			if( options.render2d != render2dOld){
 			 	updateRenderMode();
 			}
-
-			// console.log("2-bottomLeft %o", bottomLeft);
-			// console.log("3-topRight %o", topRight);
-			// console.log("4-topLeft %o", topLeft);
-			// console.log("5-bottomRight %o", bottomRight);
-
 			
 			visibleTiles = [];
 			options.zoom = distanceToZoom(camera.position.distanceTo(controls.target));
@@ -542,8 +565,9 @@
 
 
 			visibleTiles.forEach(tile => tile.show());
-			visibleTiles.forEach(tile => { if (tile.zoom == 13) {console.log("Tile %o", tile);} });
-
+			
+			console.log("%s tiles (13 %s, 12 %s, 11 %s, 10 %s) are visible", visibleTiles.length, visibleTiles.filter(tile=>tile.zoom==13).length, visibleTiles.filter(tile=>tile.zoom==12).length, visibleTiles.filter(tile=>tile.zoom==11).length, visibleTiles.filter(tile=>tile.zoom==10).length);
+			
 			lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 		}
 
@@ -551,19 +575,16 @@
 			// ground.rotation.x = -Math.PI / 2;
 			scene.add(ground);
 
-			ground.add(viewPlane);
-
 			rootTile = new ATile(-HALF_SCENE_WIDTH, -HALF_SCENE_HEIGHT, SCENE_WIDTH, SCENE_HEIGHT, 0);
 
 			for (var zoom in ZOOM_COLOR_MAP) {
 				zoom = parseInt(zoom);
 				const nTiles = zoomToNTiles(zoom);
 
-				tileGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles, 256, 256));
+				tileGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles, 255, 255));
 				tileWireGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles));
 			}
 			
-			viewPlane.position.z = 5;
 		}
 
 		function findVisible(tile, zoom, level, viewRect, visibleTiles) {
@@ -575,27 +596,20 @@
 				tile.split();
 			}
 
-			if (tile.children.length == 0 || level >= zoom) {
-				visibleTiles.push(tile);
+			if (tile.children.length == 0 || level >= zoom || Math.abs(tile.centerX-controls.target.x)/tile.width> 2 || Math.abs(tile.centerY-controls.target.y)/tile.height> 2 ) {
+				 visibleTiles.push(tile);
 				// console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
-			} else if (level == zoom) {
-				var visibleSubTiles = [];
-				for (var i = 0; i < 4; i++) {
-					const child = tile.children[i];
-					findVisible(child, zoom, level + 1, viewRect, visibleSubTiles);
-				}
-
-				if (visibleSubTiles.length == 0) {
-					visibleTiles.push(tile);
-				} else {
-					visibleTiles.push(...visibleSubTiles);
-				}
+			} 
+			else if (level == zoom) {
+				visibleTiles.push(tile);
 			}
 			else {
 				for (var i = 0; i < 4; i++) {
 					const child = tile.children[i];
 					//findVisible(child, zoom, level + 1, viewRect, visibleTiles);
-					findVisible(child, distanceToZoom(camera.position.distanceTo(new THREE.Vector3(tile.centerX, tile.centerY, controls.target.z).add(controls.target).divideScalar(2.0))), level + 1, viewRect, visibleTiles);
+					//findVisible(child, distanceToZoom(camera.position.distanceTo(new THREE.Vector3(tile.centerX, tile.centerY, controls.target.z).add(controls.target).divideScalar(2.0))), level + 1, viewRect, visibleTiles);
+					
+				findVisible(child, zoom, level + 1, viewRect, visibleTiles);
 					
 				}
 			}
@@ -624,42 +638,11 @@
 		}
 
 		function distanceToZoom(distance) {
-			var zoom = 0;
-
-			if (distance > 400_000) {
-				zoom = 0;
-			}
-			else if (distance > 200_000) {
-				zoom = 1;
-			}
-			else if (distance > 100_000) {
-				zoom = 2;
-			}
-			else if (distance > 50_000) {
-				zoom = 3;
-			}
-			else if (distance > 25_000) {
-				zoom = 4;
-			}
-			else if (distance > 12500) {
-				zoom = 5;
-			} else if (distance > 6200) {
-				zoom = 6;
-			}
-			else if (distance > 3100) {
-				zoom = 7;
-			} else if (distance > 1550) {
-				zoom = 8;
-			} else if (distance > 780) {
-				zoom = 9;
-			} else if (distance > 390) {
-				zoom = 10;
-			} else if (distance > 190) {
-				zoom = 11;
-			} else if (distance > 95) {
-				zoom = 12;
-			}else{
-				zoom = 13;
+			var zoom = MAX_ZOOM;
+			
+			while(distance>123){
+				distance = distance / 2;
+				zoom=zoom-1;
 			}
 
 			return zoom;
@@ -713,8 +696,7 @@
 		}
 		
 		function newTilePlane(tile) {
-			var bumpTexture = new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`);
-			
+
 			const gridPlaneGeometry = tileGeometries.get(tile.zoom);
 			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(tile.uOffset, tile.vOffset, tile.zoom));
 
@@ -731,8 +713,8 @@
 			// console.log("New plane added to %o for tile %o", planeGrid.position, tile);
 
 			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
-			wirePlane.position.z = 35;
-			planeGrid.add(wirePlane);
+			wirePlane.position.z = 60;
+			// planeGrid.add(wirePlane);
 
 			return planeGrid;
 		}
@@ -772,35 +754,14 @@
 				// intersects[0].object.geometry.colorsNeedUpdate = true;
 				for (var tile of visibleTiles){
 					if (tile.plane == intersects[0].object){
-						tile.showBorder=true;
-						tile.renderMode = null;
-						renderModeChanged();
+						//tile.showBorder=true;
+						//tile.renderMode = null;
+						//renderModeChanged();
 						console.log("Tile intersected %s %s zoom %s", tile.uOffset, tile.vOffset, tile.zoom);
 					}
 				}
 			}
 
-		}
-		
-		function plane(){
-			const geometry = new THREE.BufferGeometry();
-			
-			// create a simple square shape. We duplicate the top left and bottom right
-			// vertices because each vertex needs to appear once per triangle.
-			const vertices = new Float32Array( [
-				-1.0, -1.0,  1.0,
-				 1.0, -1.0,  1.0,
-				 1.0,  1.0,  1.0,
-
-				 1.0,  1.0,  1.0,
-				-1.0,  1.0,  1.0,
-				-1.0, -1.0,  1.0
-			] );
-
-			// itemSize = 3 because there are 3 values (components) per vertex
-			geometry.setAttribute( 'position', new THREE.BufferAttribute( vertices, 3 ) );
-			const material = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
-			const mesh = new THREE.Mesh( geometry, material );
 		}
 
 	</script>
