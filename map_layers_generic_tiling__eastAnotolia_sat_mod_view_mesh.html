@@ -41,8 +41,8 @@
 			}
 
 		</script>
-		
-		<script id="fragmentShaderTexture" type="x-shader/x-fragment">
+
+	<script id="fragmentShaderTexture" type="x-shader/x-fragment">
 
 			uniform sampler2D satTexture;
 			
@@ -54,8 +54,8 @@
 			}
 
 		</script>
-		
-		<script id="fragmentShaderTextureBorder" type="x-shader/x-fragment">
+
+	<script id="fragmentShaderTextureBorder" type="x-shader/x-fragment">
 
 			uniform sampler2D satTexture;
 			
@@ -116,20 +116,21 @@
 		let water, oldWater, oldWaterTex, noBumpTex, sun;
 		let uniformsTemplate;
 		const frustum = new THREE.Frustum();
+		let selectedTile = null;
 
 		let rootTile;
 		let visibleTiles = [];
 		const tileGeometries = new Map();
 		const tileWireGeometries = new Map();
-		const RENDER_MODE_2D=0;
-		const RENDER_MODE_3D_SAT=1;
-		const RENDER_MODE_3D_COL=2;
-		const RENDER_MODE_3D_SAT_B=3;
+		const RENDER_MODE_2D = 0;
+		const RENDER_MODE_3D_SAT = 1;
+		const RENDER_MODE_3D_COL = 2;
+		const RENDER_MODE_3D_SAT_B = 3;
 
 		let lastPost = new THREE.Vector3();
 		let ground = new THREE.Group();
 
-		let MAX_DIST = 2_000_000;
+		let MAX_DIST = 4_000_000;
 		let MIN_DIST = 40;
 		let BUMP_SCALE = 100.0;
 		let MAX_ZOOM = 13;
@@ -153,9 +154,9 @@
 			zoom: 0
 		};
 
-		let SCENE_WIDTH = 500_000;
+		let SCENE_WIDTH = 2_000_000;
 		let HALF_SCENE_WIDTH = SCENE_WIDTH / 2;
-		let SCENE_HEIGHT = 500_000;
+		let SCENE_HEIGHT = 2_000_000;
 		let HALF_SCENE_HEIGHT = SCENE_HEIGHT / 2;
 
 		const stats = Stats()
@@ -183,7 +184,7 @@
 
 				this.box = new THREE.Box3();
 				this.box.setFromCenterAndSize(new THREE.Vector3(this.centerX, this.centerY, PLANE_Z), new THREE.Vector3(width, height, 5));
-				
+
 				this.zoom = zoom;
 
 				this.plane = null;
@@ -203,7 +204,7 @@
 			}
 
 			show() {
-				if (options.renderMode!=this.renderMode && this.plane != null) {
+				if (options.renderMode != this.renderMode && this.plane != null) {
 					this.plane.material = buildCustomMaterial(this.uOffset, this.vOffset, this.zoom, this.showBorder);
 					this.renderMode = options.renderMode;
 				}
@@ -213,10 +214,12 @@
 					ground.add(this.plane);
 				}
 
+				this.plane.frustumCulled = false;
 				this.plane.visible = true;
 			}
 
 			hide() {
+				this.plane.frustumCulled = true;
 				this.plane.visible = false;
 			}
 
@@ -285,7 +288,7 @@
 			renderer.setSize(window.innerWidth, window.innerHeight);
 			document.body.appendChild(renderer.domElement);
 
-			camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 10, MAX_DIST+1);
+			camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 10, MAX_DIST + 1);
 			camera.up = new THREE.Vector3(0, 0, 1);
 		}
 
@@ -303,7 +306,7 @@
 			//controls.maxPolarAngle = Math.PI / 2;
 
 			camera.position.set(0, 0, MAX_DIST);
-			controls.target.copy(new THREE.Vector3(0, 0, 0));
+			controls.target.copy(new THREE.Vector3(camera.position.x, camera.position.y, 0));
 
 			controls.zoomSpeed = 13.5;
 		}
@@ -378,7 +381,7 @@
 			var oldWaterGeo = new THREE.PlaneGeometry(SCENE_WIDTH, SCENE_HEIGHT, 1, 1);
 			oldWaterTex = new THREE.TextureLoader().load('images/water512.jpg');
 			noBumpTex = new THREE.TextureLoader().load('images/black.jpg');
-			
+
 			oldWaterTex.wrapS = oldWaterTex.wrapT = THREE.RepeatWrapping;
 			oldWaterTex.repeat.set(5, 5);
 
@@ -425,20 +428,20 @@
 			gui.add(options, 'zoomIn');
 			gui.add(options, 'zoomOut');
 			gui.add(options, 'go2d');
-			gui.add(oldWater.position,'z');
+			gui.add(oldWater.position, 'z');
 		}
-		
-		function renderModeChanged(){
+
+		function renderModeChanged() {
 			updateRenderMode();
 			forceRenderMap();
 		}
-		
-		function forceRenderMap(){
+
+		function forceRenderMap() {
 			lastPost = new THREE.Vector3();
 		}
-		
-		function updateRenderMode(){
-			options.renderMode=options.render2d ? RENDER_MODE_2D: (options.renderTexture ?  RENDER_MODE_3D_SAT : RENDER_MODE_3D_COL);
+
+		function updateRenderMode() {
+			options.renderMode = options.render2d ? RENDER_MODE_2D : (options.renderTexture ? RENDER_MODE_3D_SAT : RENDER_MODE_3D_COL);
 		}
 
 		function buildTemplateUniforms() {
@@ -449,63 +452,67 @@
 
 			return uniforms;
 		}
-		
-		function buildCustomMaterial(x, y, z, border=false) {
-			
+
+		function buildCustomMaterial(x, y, z, border = false) {
+
 			//var bumpTexture = new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`);
-			
+
 			// var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`);
 			// bumpTexture.wrapS = bumpTexture.wrapT = THREE.RepeatWrapping;
 
-			
+			// new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`, 
+			// function ( bTexture ) {
+			// uniforms['bumpTexture'] = { type: "t", value: bTexture };						
+			// }
+			// );
 
 			if (options.render2d) {
-				const mat2d =  new THREE.MeshBasicMaterial({
-					map: oldWaterTex,
-				});
-				
-				var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`, 
-					function ( texture ) {
-						 mat2d.map = texture;
-						 forceRenderMap();
-					}
-				);
-				
-				return mat2d;
+				return build2dMat(x, y, z);
 			}
 			else {
-				var uniforms = Object.assign({}, uniformsTemplate);
-				uniforms['bumpTexture'] = { type: "t", value: noBumpTex };
-				uniforms['satTexture'] = { type: "t", value: oldWaterTex };
-				uniforms['borderAmount'] = { type: "f", value: 1.0 };
-			
-				const fragmentShaderName = options.renderTexture? (border?'fragmentShaderTextureBorder':'fragmentShaderTexture'):'fragmentShaderColor';
-				
-				new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`, 
-					function ( texture ) {
-						 uniforms['satTexture'] = { type: "t", value: texture };						
-						 
-						 
-						 new THREE.TextureLoader().load(`images/demTiles13/${z}/${x}/${y}.png`, 
-							function ( bTexture ) {
-								 uniforms['bumpTexture'] = { type: "t", value: bTexture };						
-								 forceRenderMap();
-							}
-						);
-						 
-					}
-				);
-				
-				return new THREE.ShaderMaterial(
-					{
-						uniforms: uniforms,
-						vertexShader: document.getElementById('vertexShader').textContent,
-						fragmentShader: document.getElementById(fragmentShaderName).textContent
-					}
-				);
+				return build2dMat(x, y, z);
+				//return build3dMat(x, y, z, border=false);
 
 			}
 
+		}
+
+		function build2dMat(x, y, z) {
+			const mat2d = new THREE.MeshBasicMaterial({
+				map: oldWaterTex,
+			});
+
+			var satTexture = new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`,
+				function (texture) {
+					mat2d.map = texture;
+					forceRenderMap();
+				}
+			);
+
+			return mat2d;
+		}
+
+		function build3dMat(x, y, z, border = false) {
+			var uniforms = Object.assign({}, uniformsTemplate);
+			uniforms['satTexture'] = { type: "t", value: oldWaterTex };
+			uniforms['borderAmount'] = { type: "f", value: 1.0 };
+
+			const fragmentShaderName = options.renderTexture ? (border ? 'fragmentShaderTextureBorder' : 'fragmentShaderTexture') : 'fragmentShaderColor';
+
+			new THREE.TextureLoader().load(`images/eastAnatoliaSat/${z}/${x}/${y}.png`,
+				function (texture) {
+					uniforms['satTexture'] = { type: "t", value: texture };
+					forceRenderMap();
+				}
+			);
+
+			return new THREE.ShaderMaterial(
+				{
+					uniforms: uniforms,
+					vertexShader: document.getElementById('vertexShader').textContent,
+					fragmentShader: document.getElementById(fragmentShaderName).textContent
+				}
+			);
 		}
 
 		function onWindowResize() {
@@ -530,7 +537,7 @@
 		function render() {
 			const time = performance.now() * 0.001;
 			water.material.uniforms['time'].value += 1.0 / 60.0;
-			if (Math.abs(lastPost.x-camera.position.x)<0.001 && Math.abs(lastPost.y-camera.position.y)<0.001 && Math.abs(lastPost.z-camera.position.z)<0.001) return;
+			if (Math.abs(lastPost.x - camera.position.x) < 0.001 && Math.abs(lastPost.y - camera.position.y) < 0.001 && Math.abs(lastPost.z - camera.position.z) < 0.001) return;
 			renderMap();
 
 			renderer.render(scene, camera);
@@ -546,15 +553,15 @@
 
 			const render2dOld = options.render2d;
 			options.render2d = Math.abs(camera.position.z - controls.target.z - camera.position.distanceTo(controls.target)) < 0.001;
-			
-			if( options.render2d != render2dOld){
-			 	updateRenderMode();
+
+			if (options.render2d != render2dOld) {
+				updateRenderMode();
 			}
-			
+
 			visibleTiles = [];
 			options.zoom = distanceToZoom(camera.position.distanceTo(controls.target));
-			
-			const matrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+
+			const matrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);//.multiply(new THREE.Matrix4().makeTranslation(5000,0,100));
 			frustum.setFromProjectionMatrix(matrix);
 
 			if (options.render2d) {
@@ -565,9 +572,9 @@
 
 
 			visibleTiles.forEach(tile => tile.show());
-			
-			console.log("%s tiles (13 %s, 12 %s, 11 %s, 10 %s) are visible", visibleTiles.length, visibleTiles.filter(tile=>tile.zoom==13).length, visibleTiles.filter(tile=>tile.zoom==12).length, visibleTiles.filter(tile=>tile.zoom==11).length, visibleTiles.filter(tile=>tile.zoom==10).length);
-			
+
+			console.log("%s tiles (13 %s, 12 %s, 11 %s, 10 %s) are visible", visibleTiles.length, visibleTiles.filter(tile => tile.zoom == 13).length, visibleTiles.filter(tile => tile.zoom == 12).length, visibleTiles.filter(tile => tile.zoom == 11).length, visibleTiles.filter(tile => tile.zoom == 10).length);
+
 			lastPost = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 		}
 
@@ -584,11 +591,34 @@
 				tileGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles, 255, 255));
 				tileWireGeometries.set(zoom, new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles));
 			}
-			
+
 		}
 
 		function findVisible(tile, zoom, level, viewRect, visibleTiles) {
-			if ( !viewRect.intersectsBox(tile.box) ) {
+			//if (selectedTile == tile) {
+			//	console.log("Found selected tile");
+			//}
+
+			//if (tile.children == null) {
+			//	tile.split();
+			//}
+
+			//for (var aatile of tile.children) {
+			//	if (selectedTile == aatile) {
+			//		console.log("Found selected tile");
+			//	}
+			//}
+
+			const box = new THREE.Box3().copy(tile.box);
+
+			if (tile.plane != null)
+				box.applyMatrix4(tile.plane.matrixWorld);//.applyMatrix4(ground.matrixWorld);
+			else {
+				box.min.z = -150;
+				box.max.z = 150;
+			}
+
+			if (!viewRect.intersectsBox(box)) {
 				return;
 			}
 
@@ -596,10 +626,10 @@
 				tile.split();
 			}
 
-			if (tile.children.length == 0 || level >= zoom || Math.abs(tile.centerX-controls.target.x)/tile.width> 2 || Math.abs(tile.centerY-controls.target.y)/tile.height> 2 ) {
-				 visibleTiles.push(tile);
+			if (tile.children.length == 0 || level >= zoom || Math.abs(tile.centerX - controls.target.x) / tile.width > 2 || Math.abs(tile.centerY - controls.target.y) / tile.height > 2) {
+				visibleTiles.push(tile);
 				// console.log("Tile level past zoom Tile=%o ViewRecf=%o zoom=%s level=%s", tile, viewRect, zoom, level);
-			} 
+			}
 			else if (level == zoom) {
 				visibleTiles.push(tile);
 			}
@@ -608,16 +638,21 @@
 					const child = tile.children[i];
 					//findVisible(child, zoom, level + 1, viewRect, visibleTiles);
 					//findVisible(child, distanceToZoom(camera.position.distanceTo(new THREE.Vector3(tile.centerX, tile.centerY, controls.target.z).add(controls.target).divideScalar(2.0))), level + 1, viewRect, visibleTiles);
-					
-				findVisible(child, zoom, level + 1, viewRect, visibleTiles);
-					
+
+					findVisible(child, zoom, level + 1, viewRect, visibleTiles);
+
 				}
 			}
 
 		}
 
 		function findVisible2D(tile, zoom, level, viewRect, visibleTiles) {
-			if ( !viewRect.intersectsBox(tile.box) ) {
+			const box = new THREE.Box3().copy(tile.box);
+
+			if (tile.plane != null)
+				box.applyMatrix4(tile.plane.matrixWorld).applyMatrix4(ground.matrixWorld);
+
+			if (!viewRect.intersectsBox(box)) {
 				return;
 			}
 
@@ -639,10 +674,10 @@
 
 		function distanceToZoom(distance) {
 			var zoom = MAX_ZOOM;
-			
-			while(distance>123){
+
+			while (distance > 123) {
 				distance = distance / 2;
-				zoom=zoom-1;
+				zoom = zoom - 1;
 			}
 
 			return zoom;
@@ -694,11 +729,36 @@
 
 			return intersects;
 		}
-		
-		function newTilePlane(tile) {
 
-			const gridPlaneGeometry = tileGeometries.get(tile.zoom);
+		function newTilePlane(tile) {
+			const nTiles = zoomToNTiles(tile.zoom);
+
+			const gridPlaneGeometry = new THREE.PlaneGeometry(SCENE_WIDTH / nTiles, SCENE_HEIGHT / nTiles, 255, 255);
+			//const gridPlaneGeometry = tileGeometries.get(tile.zoom);
 			const planeGrid = new THREE.Mesh(gridPlaneGeometry, buildCustomMaterial(tile.uOffset, tile.vOffset, tile.zoom));
+
+			new THREE.TextureLoader().load('images/demTiles13/' + tile.zoom + '/' + tile.uOffset + '/' + tile.vOffset + '.png',
+				function (bTexture) {
+					new THREE.TextureLoader().load('images/demTiles13/' + tile.zoom + '/' + (tile.uOffset - 1) + '/' + tile.vOffset + '.png',
+						function (lTexture) {
+							new THREE.TextureLoader().load('images/demTiles13/' + tile.zoom + '/' + tile.uOffset + '/' + (tile.vOffset + 1) + '.png',
+								function (tTexture) {
+									doMap(tile, planeGrid, gridPlaneGeometry, bTexture, lTexture, tTexture);
+								}
+								, undefined,
+								function (terr) {
+									doMap(tile, planeGrid, gridPlaneGeometry, bTexture, lTexture, null);
+								}
+							);
+						},
+						undefined,
+						function (lerr) {
+							doMap(tile, planeGrid, gridPlaneGeometry, bTexture, null, null);
+						}
+					);
+
+				}
+			);
 
 			//const planeGrid = new THREE.Mesh(gridPlaneGeometry, new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], side: THREE.DoubleSide }));
 
@@ -713,14 +773,95 @@
 			// console.log("New plane added to %o for tile %o", planeGrid.position, tile);
 
 			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
-			wirePlane.position.z = 60;
-			// planeGrid.add(wirePlane);
+			//wirePlane.position.z = 60;
+			planeGrid.add(wirePlane);
 
 			return planeGrid;
 		}
 
 		function zoomToNTiles(zoom) {
 			return 2 ** (zoom);
+		}
+
+		function doMap(tile, planeGrid, gridPlaneGeometry, bTexture, lTexture, tTexture) {
+
+			// let pos = gridPlaneGeometry.getAttribute("position");
+			const pos = gridPlaneGeometry.attributes.position;
+
+			var hVerts = gridPlaneGeometry.parameters.heightSegments + 1;
+			var wVerts = gridPlaneGeometry.parameters.widthSegments + 1;
+			var index = 0;
+
+
+			const canvas = document.createElement('canvas');
+			canvas.width = bTexture.image.width;
+			canvas.height = bTexture.image.height;
+
+			//console.log("image %s %s - plane %s %s", canvas.width, canvas.height, wVerts, hVerts)
+
+			const context = canvas.getContext('2d');
+			context.drawImage(bTexture.image, 0, 0);
+			var data = context.getImageData(0, 0, canvas.width, canvas.height);
+
+
+			for (let j = 0; j < hVerts; j++) {
+				for (let i = 0; i < wVerts; i++) {
+					//+0 is x, +1 is y.
+					// pa[3*(j*wVerts+i)+0] = 5000;
+					// pa[3*(j*wVerts+i)+1] = -3000;
+					// pa[3*(j*wVerts+i)+2] = 200000;
+
+					pos.setZ(index, data.data[index * 4]);
+					index++;
+				}
+			}
+
+			if (tTexture != null) {
+				context.drawImage(tTexture.image, 0, 0);
+				data = context.getImageData(0, 0, canvas.width, canvas.height);
+
+				index = 0;
+				var offset = hVerts * wVerts - 256;
+				for (let j = 0; j < hVerts; j++) {
+					pos.setZ(index, data.data[offset * 4]);
+					index++;
+					offset++;
+				}
+			}
+
+			if (lTexture != null) {
+				context.drawImage(lTexture.image, 0, 0);
+				data = context.getImageData(0, 0, canvas.width, canvas.height);
+
+				index = 0;
+				offset = 0;
+				for (let j = 0; j < wVerts; j++) {
+					pos.setZ(index, data.data[(index + 255) * 4]);
+					index += 256;
+				}
+			}
+
+			//for ( let i = 0, l = hVerts*wVerts; i < l; i ++ ) {
+			//	pos.setZ(index++,  1000);
+			//}
+
+			pos.needsUpdate = true;
+			//const bpbox = new THREE.Box3().copy(tile.box);
+			gridPlaneGeometry.computeBoundingBox();
+
+
+			tile.box.copy(gridPlaneGeometry.boundingBox);//.applyMatrix4( planeGrid.matrixWorld );
+
+			//tile.box.min.z -= 50;
+			//tile.box.max.z += 50;
+
+			//const bpgbox = new THREE.Box3().copy(gridPlaneGeometry.boundingBox);
+			//bpgbox.applyMatrix4(planeGrid.matrixWorld);
+
+			// console.log("pbox %o nbox %o box %o", bpbox, tile.box, bpgbox);
+			// gridPlaneGeometry.computeVertexNormals();
+
+			forceRenderMap();
 		}
 
 		function onDocumentMouseDown(event) {
@@ -743,7 +884,7 @@
 			var ray = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
 
 			// create an array containing all objects in the scene with which the ray intersects
-			const visiblePlanes = visibleTiles.filter(t=>t.plane!=null).map(t=>t.plane);
+			const visiblePlanes = visibleTiles.filter(t => t.plane != null).map(t => t.plane);
 			var intersects = ray.intersectObjects(visiblePlanes);
 
 			// if there is one (or more) intersections
@@ -752,11 +893,12 @@
 				// change the color of the closest face.
 				// intersects[0].face.color.setRGB(0.8 * Math.random() + 0.2, 0, 0);
 				// intersects[0].object.geometry.colorsNeedUpdate = true;
-				for (var tile of visibleTiles){
-					if (tile.plane == intersects[0].object){
-						//tile.showBorder=true;
-						//tile.renderMode = null;
-						//renderModeChanged();
+				for (var tile of visibleTiles) {
+					if (tile.plane == intersects[0].object) {
+						tile.showBorder = true;
+						tile.renderMode = null;
+						selectedTile = tile;
+						renderModeChanged();
 						console.log("Tile intersected %s %s zoom %s", tile.uOffset, tile.vOffset, tile.zoom);
 					}
 				}

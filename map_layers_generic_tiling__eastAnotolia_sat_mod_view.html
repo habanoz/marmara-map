@@ -129,7 +129,7 @@
 		let lastPost = new THREE.Vector3();
 		let ground = new THREE.Group();
 
-		let MAX_DIST = 2_000_000;
+		let MAX_DIST = 4_000_000;
 		let MIN_DIST = 40;
 		let BUMP_SCALE = 100.0;
 		let MAX_ZOOM = 13;
@@ -153,9 +153,9 @@
 			zoom: 0
 		};
 
-		let SCENE_WIDTH = 500_000;
+		let SCENE_WIDTH = 2_000_000;
 		let HALF_SCENE_WIDTH = SCENE_WIDTH / 2;
-		let SCENE_HEIGHT = 500_000;
+		let SCENE_HEIGHT = 2_000_000;
 		let HALF_SCENE_HEIGHT = SCENE_HEIGHT / 2;
 
 		const stats = Stats()
@@ -182,7 +182,7 @@
 				this.height = height;
 
 				this.box = new THREE.Box3();
-				this.box.setFromCenterAndSize(new THREE.Vector3(this.centerX, this.centerY, PLANE_Z), new THREE.Vector3(width, height, 5));
+				this.box.setFromCenterAndSize(new THREE.Vector3(this.centerX, this.centerY, PLANE_Z), new THREE.Vector3(width, height, 500));
 				
 				this.zoom = zoom;
 
@@ -714,7 +714,7 @@
 
 			const wirePlane = new THREE.Mesh(tileWireGeometries.get(tile.zoom), new THREE.MeshBasicMaterial({ color: ZOOM_COLOR_MAP[tile.zoom], wireframe: true }));
 			wirePlane.position.z = 60;
-			// planeGrid.add(wirePlane);
+			planeGrid.add(wirePlane);
 
 			return planeGrid;
 		}
@@ -757,7 +757,7 @@
 						//tile.showBorder=true;
 						//tile.renderMode = null;
 						//renderModeChanged();
-						console.log("Tile intersected %s %s zoom %s", tile.uOffset, tile.vOffset, tile.zoom);
+						console.log("Tile intersected %s %s zoom %s center %s %s", tile.uOffset, tile.vOffset, tile.zoom, tile.centerX, tile.centerY);
 					}
 				}
 			}
