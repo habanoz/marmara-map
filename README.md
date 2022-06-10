@@ -1,4 +1,4 @@
-# marmara
+# 3D Marmara Map
 
 A 3D height map application implementations for north-west of Turkiye using threejs.
 
