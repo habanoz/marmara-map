@@ -13,5 +13,3 @@ A 3D height map application for north-west of Turkiye using threejs.
 [Marmara Misc Controls](misc_controls_map.html)
 
 [Marmara large lakes color](misc_controls_map_lakes_large_colors.html)
-
-[Marmara large lakes color Grid](misc_controls_map_lakes_large_colors_grid.html)
