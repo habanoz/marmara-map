@@ -1,3 +1,3 @@
 # marmara
 
-A 3D height map implementation using threejs. 
+A 3D height map application for north-west of Turkiye using threejs.
