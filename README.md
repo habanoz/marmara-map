@@ -1,6 +1,8 @@
 # marmara
 
-A 3D height map application for north-west of Turkiye using threejs.
+A 3D height map application implementations for north-west of Turkiye using threejs.
+
+The last one is the most mature one. Others are kept to show the incremenetal progress.
 
 [Map Lakes](map_lakes.html)
 
